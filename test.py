@@ -19,7 +19,6 @@ from tensorboardX import SummaryWriter
 import argparse
 import datetime
 import multiprocessing
-import time
 
 # Local
 import models
