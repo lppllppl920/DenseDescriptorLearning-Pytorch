@@ -2,7 +2,7 @@
 
 ![Ours](point_cloud_overlay_fm_only_spatial_grouping.gif) ![SIFT](point_cloud_overlay_SIFT.gif)
 
-*The video on the left is the point overlay with the SfM results using our proposed dense descriptor. The video on the right is the one with the SfM results using SIFT"
+*The video on the left is the video overlay of the SfM results estimated with our proposed dense descriptor. The video on the right is the SfM results using SIFT"
 
 
 This codebase implements the method described in the paper:
@@ -15,7 +15,7 @@ In ***Conference on Computer Vision and Pattern Recognition (CVPR) 2020***
 
 Please contact [**Xingtong Liu**](http://www.cs.jhu.edu/~xingtongl/) (xliu89@jh.edu) if you have any questions.
 
-We kindly ask you to cite [this paper](https://ieeexplore.ieee.org/abstract/document/8889760) if the code is used in your own work.
+We kindly ask you to cite [this paper](TODO:) if the code is used in your own work.
 ```
 @ARTICLE{liu2019dense,
 author={X. {Li} and A. {Sinha} and M. {Ishii} and G. D. {Hager} and A. {Reiter} and R. H. {Taylor} and M. {Unberath}},
