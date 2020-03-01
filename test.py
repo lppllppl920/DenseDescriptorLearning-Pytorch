@@ -52,11 +52,10 @@ if __name__ == '__main__':
     parser.add_argument('--visibility_overlap', type=int, default=20, help='overlap of point visibility information')
     parser.add_argument('--display_architecture', action='store_true', help='display the network architecture')
     parser.add_argument('--trained_model_path', type=str, required=True, help='path to the trained model')
-    parser.add_argument('--training_data_root', type=str, required=True, help='path to the sfm training data')
+    parser.add_argument('--testing_data_root', type=str, required=True, help='path to the sfm training data')
     parser.add_argument('--log_root', type=str, required=True, help='root of logging')
     parser.add_argument('--feature_length', type=int, default=128, help='output channel dimension of network')
     parser.add_argument('--filter_growth_rate', type=int, default=12, help='filter growth rate of network')
-    parser.add_argument('--rr_weight', type=float, default=1.0, help='weight of relative response loss')
     parser.add_argument('--keypoints_per_iter', type=int, default=200, help='number of keypoints per iteration')
     parser.add_argument('--gpu_id', type=int, default=0, help='id of selected GPU')
     args = parser.parse_args()
@@ -72,10 +71,9 @@ if __name__ == '__main__':
     testing_patient_id = args.testing_patient_id
     load_intermediate_data = args.load_intermediate_data
     display_architecture = args.display_architecture
-    training_data_root = Path(args.training_data_root)
+    testing_data_root = Path(args.testing_data_root)
     feature_length = args.feature_length
     filter_growth_rate = args.filter_growth_rate
-    rr_weight = args.rr_weight
     network_downsampling = args.network_downsampling
     visibility_overlap = args.visibility_overlap
     keypoints_per_iter = args.keypoints_per_iter
@@ -97,7 +95,7 @@ if __name__ == '__main__':
     np.random.seed(10086)
     random.seed(10086)
 
-    precompute_root = training_data_root / "precompute"
+    precompute_root = testing_data_root / "precompute"
     try:
         precompute_root.mkdir(mode=0o777, parents=True)
     except OSError:
@@ -141,14 +139,14 @@ if __name__ == '__main__':
         torchsummary.summary(feature_descriptor_model, input_size=(3, height, width))
 
     total_query = 0
-    folder_list = utils.get_parent_folder_names(training_data_root, id_range=testing_patient_id)
+    folder_list = utils.get_parent_folder_names(testing_data_root, id_range=testing_patient_id)
 
     mean_accuracy_1 = None
     mean_accuracy_2 = None
     mean_accuracy_3 = None
 
     for patient_id in testing_patient_id:
-        data_root = Path(training_data_root) / "{:d}".format(patient_id)
+        data_root = Path(testing_data_root) / "{:d}".format(patient_id)
         sub_folders = list(data_root.glob("*/"))
         sub_folders.sort()
         for folder in sub_folders:

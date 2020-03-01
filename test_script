@@ -47,7 +47,7 @@
 --display_architecture
 --trained_model_path
 "/home/xliu89/tmp_ramfs/DenseDescriptorLearning-Pytorch/Train/dense_descriptor_train_3_1_13_18/checkpoint_model_epoch_0_0.7674000118970872_0.832900013923645_0.904550008058548.pt"
---training_data_root
+--testing_data_root
 "/home/xliu89/tmp_ramfs/DenseDescriptorLearning-Pytorch/example_training_data_root"
 --log_root
 "/home/xliu89/tmp_ramfs/DenseDescriptorLearning-Pytorch/Train"
@@ -55,8 +55,6 @@
 256
 --filter_growth_rate
 10
---rr_weight
-1.0
 --keypoints_per_iter
 3000
 --gpu_id
