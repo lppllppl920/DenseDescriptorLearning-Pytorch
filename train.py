@@ -168,7 +168,8 @@ if __name__ == '__main__':
                                        sampling_size=sampling_size,
                                        phase="train", heatmap_sigma=heatmap_sigma,
                                        pre_workers=num_pre_workers,
-                                       visible_interval=visibility_overlap)
+                                       visible_interval=visibility_overlap,
+                                       num_iter=num_iter)
     train_loader = torch.utils.data.DataLoader(dataset=train_dataset, batch_size=batch_size, shuffle=True,
                                                num_workers=num_workers)
 
@@ -183,7 +184,8 @@ if __name__ == '__main__':
                                      sampling_size=sampling_size,
                                      phase="validation", heatmap_sigma=heatmap_sigma,
                                      pre_workers=num_pre_workers,
-                                     visible_interval=visibility_overlap)
+                                     visible_interval=visibility_overlap,
+                                     num_iter=num_iter)
     val_loader = torch.utils.data.DataLoader(dataset=val_dataset, batch_size=batch_size, shuffle=False,
                                              num_workers=num_workers)
 
@@ -306,11 +308,10 @@ if __name__ == '__main__':
                 with torch.no_grad():
                     gt_heatmaps_1 = gt_heatmaps_1.cuda()
                     gt_heatmaps_2 = gt_heatmaps_2.cuda()
-
                     display_success = utils.display_results(colors_1, colors_2, feature_maps_1, feature_maps_2,
                                                             boundaries, response_map_1,
                                                             gt_heatmaps_1, response_map_2, gt_heatmaps_2,
-                                                            cross_check_distance, sift, step,
+                                                            sift, cross_check_distance, step,
                                                             writer, phase="Train")
 
             step += 1
@@ -369,7 +370,7 @@ if __name__ == '__main__':
                     display_success = utils.display_results(colors_1, colors_2, feature_maps_1, feature_maps_2,
                                                             boundaries, response_map_1,
                                                             gt_heatmaps_1, response_map_2, gt_heatmaps_2,
-                                                            cross_check_distance, sift, validation_step,
+                                                            sift, cross_check_distance, validation_step,
                                                             writer, phase="Validation")
 
                 ratio_1, ratio_2, ratio_3 = matching_accuracy_metric(

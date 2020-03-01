@@ -19,6 +19,7 @@ from tensorboardX import SummaryWriter
 import argparse
 import datetime
 import multiprocessing
+import time
 
 # Local
 import models
@@ -51,7 +52,7 @@ if __name__ == '__main__':
                         help='whether or not to load intermediate data')
     parser.add_argument('--visibility_overlap', type=int, default=20, help='overlap of point visibility information')
     parser.add_argument('--display_architecture', action='store_true', help='display the network architecture')
-    parser.add_argument('--trained_model_path', type=str, default=None, help='path to the trained model')
+    parser.add_argument('--trained_model_path', type=str, required=True, help='path to the trained model')
     parser.add_argument('--training_data_root', type=str, required=True, help='path to the sfm training data')
     parser.add_argument('--log_root', type=str, required=True, help='root of logging')
     parser.add_argument('--feature_length', type=int, default=128, help='output channel dimension of network')
@@ -61,25 +62,14 @@ if __name__ == '__main__':
     parser.add_argument('--gpu_id', type=int, default=0, help='id of selected GPU')
     args = parser.parse_args()
 
-    load_trained_model = args.load_trained_model
-    if load_trained_model:
-        if args.trained_model_path is not None:
-            trained_model_path = Path(args.trained_model_path)
-        else:
-            raise IOError
-    else:
-        trained_model_path = None
-
+    trained_model_path = Path(args.trained_model_path)
     log_root = Path(args.log_root)
     adjacent_range = args.adjacent_range
     image_downsampling = args.image_downsampling
     height, width = args.input_size
-    batch_size = args.batch_size
     num_workers = args.num_workers
     num_pre_workers = args.num_pre_workers
-    lr_range = args.lr_range
     inlier_percentage = args.inlier_percentage
-    display_interval = args.display_interval
     testing_patient_id = args.testing_patient_id
     load_intermediate_data = args.load_intermediate_data
     display_architecture = args.display_architecture
@@ -249,4 +239,5 @@ if __name__ == '__main__':
                                                     'accuracy_3': mean_accuracy_3}, step)
                     tq.update(1)
                 tq.close()
+
     writer.close()

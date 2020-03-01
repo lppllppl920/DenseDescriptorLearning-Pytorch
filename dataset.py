@@ -115,7 +115,7 @@ def find_common_valid_size(folder_list, image_downsampling, network_downsampling
 class SfMDataset(Dataset):
     def __init__(self, image_file_names, folder_list, adjacent_range,
                  image_downsampling, network_downsampling, inlier_percentage, load_intermediate_data,
-                 intermediate_data_root, phase, visible_interval, pre_workers, sampling_size=10,
+                 intermediate_data_root, phase, visible_interval, pre_workers, num_iter=None, sampling_size=10,
                  heatmap_sigma=5.0):
 
         self.image_file_names = sorted(image_file_names)
@@ -128,6 +128,7 @@ class SfMDataset(Dataset):
         self.phase = phase
         self.visible_interval = visible_interval
         self.sampling_size = sampling_size
+        self.num_iter = num_iter
         self.heatmap_sigma = heatmap_sigma
         self.pre_workers = min(len(folder_list), pre_workers)
         self.normalize = albu.Normalize(std=(0.5, 0.5, 0.5), mean=(0.5, 0.5, 0.5), max_pixel_value=255.0)
@@ -145,7 +146,8 @@ class SfMDataset(Dataset):
         self.estimated_scale_per_seq = {}
 
         precompute_path = intermediate_data_root / (
-            "precompute_{}_{}_{}.pkl".format(self.downsampling, self.network_downsampling, self.inlier_percentage))
+            "precompute_{}_{}_{}.pkl".format(self.image_downsampling, self.network_downsampling,
+                                             self.inlier_percentage))
 
         # Save all intermediate results to hard disk for quick access later on
         if not load_intermediate_data or not precompute_path.exists():
@@ -170,7 +172,7 @@ class SfMDataset(Dataset):
             for i in range(self.pre_workers):
                 process_pool.append(Process(target=find_common_valid_size, args=(
                     self.folder_list[
-                    np.round(i * interval): min(np.round((i + 1) * interval), len(self.folder_list))],
+                    int(np.round(i * interval)): min(int(np.round((i + 1) * interval)), len(self.folder_list))],
                     self.image_downsampling,
                     self.network_downsampling,
                     queue_size)))
@@ -207,10 +209,10 @@ class SfMDataset(Dataset):
             process_pool = []
             for i in range(self.pre_workers):
                 process_pool.append(Process(target=pre_processing_data,
-                                            args=(i, self.folder_list[
-                                                     np.round(i * interval): min(np.round((i + 1) * interval),
-                                                                                 len(self.folder_list))], self.suffix,
-                                                  self.downsampling, self.network_downsampling,
+                                            args=(i, self.folder_list[int(np.round(i * interval)):
+                                                                      min(int(np.round((i + 1) * interval)),
+                                                                          len(self.folder_list))],
+                                                  self.image_downsampling, self.network_downsampling,
                                                   self.inlier_percentage, self.visible_interval, largest_h, largest_w,
                                                   queue_clean_point_list,
                                                   queue_intrinsic_matrix, queue_point_cloud,
@@ -307,7 +309,7 @@ class SfMDataset(Dataset):
                      self.point_cloud_per_seq, self.intrinsic_matrix_per_seq,
                      self.mask_boundary_per_seq, self.view_indexes_per_point_per_seq, self.extrinsics_per_seq,
                      self.projection_per_seq, self.clean_point_list_per_seq,
-                     self.downsampling, self.network_downsampling, self.inlier_percentage,
+                     self.image_downsampling, self.network_downsampling, self.inlier_percentage,
                      self.estimated_scale_per_seq],
                     f, pickle.HIGHEST_PROTOCOL)
         else:
@@ -317,16 +319,22 @@ class SfMDataset(Dataset):
                  self.point_cloud_per_seq, self.intrinsic_matrix_per_seq,
                  self.mask_boundary_per_seq, self.view_indexes_per_point_per_seq, self.extrinsics_per_seq,
                  self.projection_per_seq, self.clean_point_list_per_seq,
-                 self.downsampling, self.network_downsampling,
+                 self.image_downsampling, self.network_downsampling,
                  self.inlier_percentage, self.estimated_scale_per_seq] = pickle.load(f)
 
     def __len__(self):
-        return len(self.image_file_names)
+        if self.phase == "train" or self.phase == "validation":
+            if self.num_iter is not None:
+                return max(self.num_iter, len(self.image_file_names))
+            else:
+                return len(self.image_file_names)
+        elif self.phase == "test":
+            return len(self.image_file_names)
 
     def __getitem__(self, idx):
         if self.phase == 'train' or self.phase == "validation":
             while True:
-                img_file_name = self.image_file_names[idx]
+                img_file_name = self.image_file_names[idx % len(self.image_file_names)]
                 # Retrieve the folder path
                 folder = img_file_name.parent
                 folder_str = str(folder)
@@ -351,7 +359,8 @@ class SfMDataset(Dataset):
                 # Read pair images with downsampling and cropping
                 pair_imgs = utils.get_pair_color_imgs(prefix_seq=folder, pair_indexes=pair_indexes, start_h=start_h,
                                                       start_w=start_w,
-                                                      end_h=end_h, end_w=end_w, downsampling_factor=self.downsampling)
+                                                      end_h=end_h, end_w=end_w,
+                                                      downsampling_factor=self.image_downsampling)
                 height, width = pair_imgs[0].shape[:2]
                 feature_matches = \
                     utils.get_torch_training_data_feature_matching(height=height, width=width,
@@ -422,19 +431,9 @@ class SfMDataset(Dataset):
             target_feature_1D_locations[:, 0] = np.round(clipped_target_feature_2D_locations[:, 0]) + \
                                                 np.round(clipped_target_feature_2D_locations[:, 1]) * width
 
-            if self.to_augment:
-                # Data augmentation
-                augmented_1 = self.transform(image=training_color_img_1)
-                augmented_2 = self.transform(image=training_color_img_2)
-                training_color_img_1 = augmented_1['image']
-                training_color_img_2 = augmented_2['image']
-                # Normalize
-                training_color_img_1 = self.normalize(image=training_color_img_1)['image']
-                training_color_img_2 = self.normalize(image=training_color_img_2)['image']
-            else:
-                # Normalize
-                training_color_img_1 = self.normalize(image=training_color_img_1)['image']
-                training_color_img_2 = self.normalize(image=training_color_img_2)['image']
+            # Normalize
+            training_color_img_1 = self.normalize(image=training_color_img_1)['image']
+            training_color_img_2 = self.normalize(image=training_color_img_2)['image']
 
             return [img_to_tensor(training_color_img_1), img_to_tensor(training_color_img_2),
                     torch.from_numpy(source_feature_1D_locations),
@@ -483,7 +482,7 @@ class SfMDataset(Dataset):
                                                                   clean_point_list=
                                                                   self.clean_point_list_per_seq[
                                                                       folder_str])
-                feature_matches_list.append(torch.from_numpy(np.asarray(feature_matches)))
+                feature_matches_list.append(torch.from_numpy(np.asarray(feature_matches)).float())
 
             # Format training data
             training_mask_boundary = utils.type_float_and_reshape(

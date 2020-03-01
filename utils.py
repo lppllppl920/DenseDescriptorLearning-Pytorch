@@ -31,11 +31,11 @@ def get_color_file_names_by_bag(root, training_patient_id, validation_patient_id
         testing_patient_id = [testing_patient_id]
 
     for id in training_patient_id:
-        training_image_list += list(root.glob('{:d}/*/0*.jpg').format(id))
+        training_image_list += list(root.glob('{:d}/*/0*.jpg'.format(id)))
     for id in testing_patient_id:
-        testing_image_list += list(root.glob('{:d}/*/0*.jpg').format(id))
+        testing_image_list += list(root.glob('{:d}/*/0*.jpg'.format(id)))
     for id in validation_patient_id:
-        validation_image_list += list(root.glob('{:d}/*/0*.jpg').format(id))
+        validation_image_list += list(root.glob('{:d}/*/0*.jpg'.format(id)))
 
     training_image_list.sort()
     testing_image_list.sort()
@@ -277,7 +277,7 @@ def get_clean_point_list(imgs, point_cloud, view_indexes_per_point, mask_boundar
                          projection_matrices,
                          extrinsic_matrices):
     array_3D_points = np.asarray(point_cloud).reshape((-1, 4))
-    assert (inlier_percentage <= 0.0 or inlier_percentage > 1.0)
+    assert (inlier_percentage > 0.0 and inlier_percentage <= 1.0)
     point_cloud_contamination_accumulator = np.zeros(array_3D_points.shape[0], dtype=np.int32)
     point_cloud_appearance_count = np.zeros(array_3D_points.shape[0], dtype=np.int32)
     height, width, channel = imgs[0].shape
@@ -458,6 +458,7 @@ def get_torch_training_data_feature_matching(height, width, pair_projections, pa
                                      np.round(visible_points_2D_image_2[in_image_indexes_2, 1]) * width).astype(
         np.int32).reshape((-1))
 
+    mask_boundary = mask_boundary.reshape((-1, 1))
     temp_mask_1 = mask_boundary[in_image_point_1D_locations_1, :]
     in_mask_indexes_1 = np.where(temp_mask_1[:, 0] == 255)
     in_mask_indexes_1 = in_mask_indexes_1[0]
@@ -471,7 +472,7 @@ def get_torch_training_data_feature_matching(height, width, pair_projections, pa
                        np.asarray(visible_point_indexes_2[in_image_indexes_2[in_mask_indexes_2]]), assume_unique=True))
 
     feature_matches = np.concatenate(
-        [points_2D_image_1[common_visible_point_indexes], points_2D_image_2[common_visible_point_indexes]],
+        [points_2D_image_1[common_visible_point_indexes, :2], points_2D_image_2[common_visible_point_indexes, :2]],
         axis=1)
 
     return feature_matches
@@ -521,6 +522,7 @@ def get_torch_testing_data_feature_matching(height, width, pair_projections, pai
                                      np.round(visible_points_2D_image_2[in_image_indexes_2, 1]) * width).astype(
         np.int32).reshape((-1))
 
+    mask_boundary = mask_boundary.reshape((-1, 1))
     temp_mask_1 = mask_boundary[in_image_point_1D_locations_1, :]
     in_mask_indexes_1 = np.where(temp_mask_1[:, 0] == 255)
     in_mask_indexes_1 = in_mask_indexes_1[0]
@@ -534,7 +536,7 @@ def get_torch_testing_data_feature_matching(height, width, pair_projections, pai
                        np.asarray(visible_point_indexes_2[in_image_indexes_2[in_mask_indexes_2]]), assume_unique=True))
 
     feature_matches = np.concatenate(
-        [points_2D_image_1[common_visible_point_indexes], points_2D_image_2[common_visible_point_indexes]],
+        [points_2D_image_1[common_visible_point_indexes, :2], points_2D_image_2[common_visible_point_indexes, :2]],
         axis=1)
 
     return feature_matches
@@ -828,13 +830,13 @@ def keypoints_descriptors_extraction(descriptor, color_1, color_2, boundary):
     boundary = boundary.data.cpu().numpy()
     _, height, width = color_1.shape
     color_1 = np.moveaxis(color_1, source=[0, 1, 2], destination=[2, 0, 1])
-    color_1 = np.uint8(255 * (color_1 * 0.5 + 0.5))
-    boundary = np.uint8(255 * boundary.reshape((height, width)))
+    color_1 = np.asarray(255 * (color_1 * 0.5 + 0.5), dtype=np.uint8)
+    boundary = np.asarray(255 * boundary.reshape((height, width)), dtype=np.uint8)
     kps_1, des_1 = descriptor.detectAndCompute(color_1, mask=boundary)
 
     color_2 = color_2.data.cpu().numpy()
     color_2 = np.moveaxis(color_2, source=[0, 1, 2], destination=[2, 0, 1])
-    color_2 = np.uint8(255 * (color_2 * 0.5 + 0.5))
+    color_2 = np.asarray(255 * (color_2 * 0.5 + 0.5), dtype=np.uint8)
     kps_2, des_2 = descriptor.detectAndCompute(color_2, mask=boundary)
 
     kps_1D_1 = []
