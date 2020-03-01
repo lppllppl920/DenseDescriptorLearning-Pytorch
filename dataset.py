@@ -18,7 +18,6 @@ from albumentations.pytorch.functional import img_to_tensor
 import albumentations as albu
 import torch
 
-
 import utils
 
 
@@ -116,8 +115,8 @@ def find_common_valid_size(folder_list, image_downsampling, network_downsampling
 class SfMDataset(Dataset):
     def __init__(self, image_file_names, folder_list, adjacent_range,
                  image_downsampling, network_downsampling, inlier_percentage, load_intermediate_data,
-                 intermediate_data_root, phase, visible_interval, sampling_size, pre_workers,
-                 heatmap_sigma):
+                 intermediate_data_root, phase, visible_interval, pre_workers, sampling_size=10,
+                 heatmap_sigma=5.0):
 
         self.image_file_names = sorted(image_file_names)
         self.folder_list = folder_list
@@ -384,65 +383,112 @@ class SfMDataset(Dataset):
                     idx = np.random.randint(0, len(self.image_file_names))
                     continue
 
-        height, width, _ = pair_imgs[0].shape
-        training_heatmaps_1, training_heatmaps_2 = utils.generate_heatmap_from_locations(
-            sampled_feature_matches, height, width, self.heatmap_sigma)
+            height, width, _ = pair_imgs[0].shape
+            training_heatmaps_1, training_heatmaps_2 = utils.generate_heatmap_from_locations(
+                sampled_feature_matches, height, width, self.heatmap_sigma)
 
-        # Format training data
-        training_color_img_1 = pair_imgs[0]
-        training_color_img_2 = pair_imgs[1]
+            # Format training data
+            training_color_img_1 = pair_imgs[0]
+            training_color_img_2 = pair_imgs[1]
 
-        training_mask_boundary = utils.type_float_and_reshape(
-            self.mask_boundary_per_seq[folder_str].astype(np.float32) / 255.0,
-            (height, width, 1))
-        training_mask_boundary[training_mask_boundary > 0.9] = 1.0
-        training_mask_boundary[training_mask_boundary <= 0.9] = 0.0
+            training_mask_boundary = utils.type_float_and_reshape(
+                self.mask_boundary_per_seq[folder_str].astype(np.float32) / 255.0,
+                (height, width, 1))
+            training_mask_boundary[training_mask_boundary > 0.9] = 1.0
+            training_mask_boundary[training_mask_boundary <= 0.9] = 0.0
 
-        source_feature_2D_locations = sampled_feature_matches[:, :2]
-        target_feature_2D_locations = sampled_feature_matches[:, 2:]
+            source_feature_2D_locations = sampled_feature_matches[:, :2]
+            target_feature_2D_locations = sampled_feature_matches[:, 2:]
 
-        source_feature_1D_locations = np.zeros(
-            (sampled_feature_matches.shape[0], 1), dtype=np.int32)
-        target_feature_1D_locations = np.zeros(
-            (sampled_feature_matches.shape[0], 1), dtype=np.int32)
+            source_feature_1D_locations = np.zeros(
+                (sampled_feature_matches.shape[0], 1), dtype=np.int32)
+            target_feature_1D_locations = np.zeros(
+                (sampled_feature_matches.shape[0], 1), dtype=np.int32)
 
-        clipped_source_feature_2D_locations = source_feature_2D_locations
-        clipped_source_feature_2D_locations[:, 0] = np.clip(clipped_source_feature_2D_locations[:, 0], a_min=0,
-                                                            a_max=width - 1)
-        clipped_source_feature_2D_locations[:, 1] = np.clip(clipped_source_feature_2D_locations[:, 1], a_min=0,
-                                                            a_max=height - 1)
+            clipped_source_feature_2D_locations = source_feature_2D_locations
+            clipped_source_feature_2D_locations[:, 0] = np.clip(clipped_source_feature_2D_locations[:, 0], a_min=0,
+                                                                a_max=width - 1)
+            clipped_source_feature_2D_locations[:, 1] = np.clip(clipped_source_feature_2D_locations[:, 1], a_min=0,
+                                                                a_max=height - 1)
 
-        clipped_target_feature_2D_locations = target_feature_2D_locations
-        clipped_target_feature_2D_locations[:, 0] = np.clip(clipped_target_feature_2D_locations[:, 0], a_min=0,
-                                                            a_max=width - 1)
-        clipped_target_feature_2D_locations[:, 1] = np.clip(clipped_target_feature_2D_locations[:, 1], a_min=0,
-                                                            a_max=height - 1)
+            clipped_target_feature_2D_locations = target_feature_2D_locations
+            clipped_target_feature_2D_locations[:, 0] = np.clip(clipped_target_feature_2D_locations[:, 0], a_min=0,
+                                                                a_max=width - 1)
+            clipped_target_feature_2D_locations[:, 1] = np.clip(clipped_target_feature_2D_locations[:, 1], a_min=0,
+                                                                a_max=height - 1)
 
-        source_feature_1D_locations[:, 0] = np.round(clipped_source_feature_2D_locations[:, 0]) + \
-                                            np.round(clipped_source_feature_2D_locations[:, 1]) * width
-        target_feature_1D_locations[:, 0] = np.round(clipped_target_feature_2D_locations[:, 0]) + \
-                                            np.round(clipped_target_feature_2D_locations[:, 1]) * width
+            source_feature_1D_locations[:, 0] = np.round(clipped_source_feature_2D_locations[:, 0]) + \
+                                                np.round(clipped_source_feature_2D_locations[:, 1]) * width
+            target_feature_1D_locations[:, 0] = np.round(clipped_target_feature_2D_locations[:, 0]) + \
+                                                np.round(clipped_target_feature_2D_locations[:, 1]) * width
 
-        if self.to_augment:
-            # Data augmentation
-            augmented_1 = self.transform(image=training_color_img_1)
-            augmented_2 = self.transform(image=training_color_img_2)
-            training_color_img_1 = augmented_1['image']
-            training_color_img_2 = augmented_2['image']
-            # Normalize
-            training_color_img_1 = self.normalize(image=training_color_img_1)['image']
-            training_color_img_2 = self.normalize(image=training_color_img_2)['image']
-        else:
-            # Normalize
-            training_color_img_1 = self.normalize(image=training_color_img_1)['image']
-            training_color_img_2 = self.normalize(image=training_color_img_2)['image']
+            if self.to_augment:
+                # Data augmentation
+                augmented_1 = self.transform(image=training_color_img_1)
+                augmented_2 = self.transform(image=training_color_img_2)
+                training_color_img_1 = augmented_1['image']
+                training_color_img_2 = augmented_2['image']
+                # Normalize
+                training_color_img_1 = self.normalize(image=training_color_img_1)['image']
+                training_color_img_2 = self.normalize(image=training_color_img_2)['image']
+            else:
+                # Normalize
+                training_color_img_1 = self.normalize(image=training_color_img_1)['image']
+                training_color_img_2 = self.normalize(image=training_color_img_2)['image']
 
-        return [img_to_tensor(training_color_img_1), img_to_tensor(training_color_img_2),
-                torch.from_numpy(source_feature_1D_locations),
-                torch.from_numpy(target_feature_1D_locations),
-                torch.from_numpy(source_feature_2D_locations),
-                torch.from_numpy(target_feature_2D_locations),
-                torch.from_numpy(training_heatmaps_1),
-                torch.from_numpy(training_heatmaps_2),
-                img_to_tensor(training_mask_boundary),
-                folder_str, str(img_file_name)]
+            return [img_to_tensor(training_color_img_1), img_to_tensor(training_color_img_2),
+                    torch.from_numpy(source_feature_1D_locations),
+                    torch.from_numpy(target_feature_1D_locations),
+                    torch.from_numpy(source_feature_2D_locations),
+                    torch.from_numpy(target_feature_2D_locations),
+                    torch.from_numpy(training_heatmaps_1),
+                    torch.from_numpy(training_heatmaps_2),
+                    img_to_tensor(training_mask_boundary),
+                    folder_str, str(img_file_name)]
+
+        elif self.phase == "test":
+            # Each training sample consists of equal or less than "adjacent_range" number of images
+            # and corresponding feature locations. The first image will be the source image.
+            # images need to all belong to the same sequence and also all have the estimated camera poses
+            # image file names should be already sorted
+            img_file_name = self.image_file_names[idx]
+            folder = img_file_name.parent
+            folder_str = str(folder)
+            start_h, end_h, start_w, end_w = self.crop_positions_per_seq[folder_str]
+
+            img_list = []
+            projection_matrix_list = []
+            for i in range(idx, min(idx + self.adjacent_range[1] + 1, len(self.image_file_names))):
+                img = utils.read_color_img(self.image_file_names[i], start_h, end_h, start_w, end_w,
+                                           self.image_downsampling)
+                height, width, _ = img.shape
+                # Normalize
+                img_list.append(img_to_tensor(self.normalize(image=img)['image']).unsqueeze(dim=0))
+                projection_matrix_list.append(self.projection_per_seq[folder_str][i])
+
+            feature_matches_list = []
+            for i in range(1, len(img_list)):
+                feature_matches = \
+                    utils.get_torch_testing_data_feature_matching(height=height, width=width,
+                                                                  pair_projections=
+                                                                  [projection_matrix_list[0],
+                                                                   projection_matrix_list[i]],
+                                                                  pair_indexes=[0, i],
+                                                                  point_cloud=self.point_cloud_per_seq[
+                                                                      folder_str],
+                                                                  mask_boundary=self.mask_boundary_per_seq[
+                                                                      folder_str],
+                                                                  view_indexes_per_point=
+                                                                  self.view_indexes_per_point_per_seq[folder_str],
+                                                                  clean_point_list=
+                                                                  self.clean_point_list_per_seq[
+                                                                      folder_str])
+                feature_matches_list.append(torch.from_numpy(np.asarray(feature_matches)))
+
+            # Format training data
+            training_mask_boundary = utils.type_float_and_reshape(
+                self.mask_boundary_per_seq[folder_str].astype(np.float32) / 255.0,
+                (height, width, 1))
+            training_mask_boundary[training_mask_boundary > 0.9] = 1.0
+            training_mask_boundary[training_mask_boundary <= 0.9] = 0.0
+            return [torch.cat(img_list, dim=0), feature_matches_list, img_to_tensor(training_mask_boundary)]

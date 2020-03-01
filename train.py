@@ -33,7 +33,7 @@ if __name__ == '__main__':
     multiprocessing.set_start_method('spawn', force=True)
     cv2.destroyAllWindows()
     parser = argparse.ArgumentParser(
-        description='Dense Descriptor Learning',
+        description='Dense Descriptor Learning -- Train',
         formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument('--adjacent_range', nargs='+', type=int, required=True,
                         help='interval range for a pair of video frames')

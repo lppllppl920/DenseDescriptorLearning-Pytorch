@@ -416,11 +416,6 @@ def get_pair_color_imgs(prefix_seq, pair_indexes, start_h, end_h, start_w, end_w
 def get_torch_training_data_feature_matching(height, width, pair_projections, pair_indexes, point_cloud,
                                              mask_boundary, view_indexes_per_point, clean_point_list,
                                              visible_view_indexes):
-    # num_clean_point = int(np.sum(np.asarray(clean_point_list)))
-    # point_projection_positions_1 = np.zeros((num_clean_point, 2), dtype=np.float32)
-    # point_projection_positions_2 = np.zeros((num_clean_point, 2), dtype=np.float32)
-
-    # Operations can be vectorized
     array_3D_points = np.asarray(point_cloud).reshape((-1, 4))
     for i in range(2):
         projection_matrix = pair_projections[i]
@@ -480,6 +475,120 @@ def get_torch_training_data_feature_matching(height, width, pair_projections, pa
         axis=1)
 
     return feature_matches
+
+
+def get_torch_testing_data_feature_matching(height, width, pair_projections, pair_indexes, point_cloud,
+                                            mask_boundary, view_indexes_per_point, clean_point_list):
+    array_3D_points = np.asarray(point_cloud).reshape((-1, 4))
+    for i in range(2):
+        projection_matrix = pair_projections[i]
+        if i == 0:
+            points_2D_image_1 = np.einsum('ij,mj->mi', projection_matrix, array_3D_points)
+            points_2D_image_1 = np.round(points_2D_image_1 / points_2D_image_1[:, 2].reshape((-1, 1)))
+        else:
+            points_2D_image_2 = np.einsum('ij,mj->mi', projection_matrix, array_3D_points)
+            points_2D_image_2 = np.round(points_2D_image_2 / points_2D_image_2[:, 2].reshape((-1, 1)))
+
+    point_visibility_1 = np.asarray(view_indexes_per_point[:, pair_indexes[0]]).reshape(
+        (-1))
+    point_visibility_2 = np.asarray(view_indexes_per_point[:, pair_indexes[1]]).reshape(
+        (-1))
+
+    visible_point_indexes_1 = np.where((point_visibility_1 > 0.5) & (clean_point_list > 0.5))
+    visible_point_indexes_1 = visible_point_indexes_1[0]
+
+    visible_point_indexes_2 = np.where((point_visibility_2 > 0.5) & (clean_point_list > 0.5))
+    visible_point_indexes_2 = visible_point_indexes_2[0]
+
+    visible_points_2D_image_1 = points_2D_image_1[visible_point_indexes_1, :].reshape((-1, 3))
+    visible_points_2D_image_2 = points_2D_image_2[visible_point_indexes_2, :].reshape((-1, 3))
+
+    in_image_indexes_1 = np.where(
+        (visible_points_2D_image_1[:, 0] <= width - 1) & (visible_points_2D_image_1[:, 0] >= 0) &
+        (visible_points_2D_image_1[:, 1] <= height - 1) & (visible_points_2D_image_1[:, 1] >= 0))
+    in_image_indexes_1 = in_image_indexes_1[0]
+
+    in_image_indexes_2 = np.where(
+        (visible_points_2D_image_2[:, 0] <= width - 1) & (visible_points_2D_image_2[:, 0] >= 0) &
+        (visible_points_2D_image_2[:, 1] <= height - 1) & (visible_points_2D_image_2[:, 1] >= 0))
+    in_image_indexes_2 = in_image_indexes_2[0]
+
+    in_image_point_1D_locations_1 = (np.round(visible_points_2D_image_1[in_image_indexes_1, 0]) +
+                                     np.round(visible_points_2D_image_1[in_image_indexes_1, 1]) * width).astype(
+        np.int32).reshape((-1))
+
+    in_image_point_1D_locations_2 = (np.round(visible_points_2D_image_2[in_image_indexes_2, 0]) +
+                                     np.round(visible_points_2D_image_2[in_image_indexes_2, 1]) * width).astype(
+        np.int32).reshape((-1))
+
+    temp_mask_1 = mask_boundary[in_image_point_1D_locations_1, :]
+    in_mask_indexes_1 = np.where(temp_mask_1[:, 0] == 255)
+    in_mask_indexes_1 = in_mask_indexes_1[0]
+
+    temp_mask_2 = mask_boundary[in_image_point_1D_locations_2, :]
+    in_mask_indexes_2 = np.where(temp_mask_2[:, 0] == 255)
+    in_mask_indexes_2 = in_mask_indexes_2[0]
+
+    common_visible_point_indexes = list(
+        np.intersect1d(np.asarray(visible_point_indexes_1[in_image_indexes_1[in_mask_indexes_1]]),
+                       np.asarray(visible_point_indexes_2[in_image_indexes_2[in_mask_indexes_2]]), assume_unique=True))
+
+    feature_matches = np.concatenate(
+        [points_2D_image_1[common_visible_point_indexes], points_2D_image_2[common_visible_point_indexes]],
+        axis=1)
+
+    return feature_matches
+
+    # num_clean_point = int(np.sum(np.asarray(clean_point_list)))
+    # point_projection_positions_1 = np.zeros((num_clean_point, 2), dtype=np.float32)
+    # point_projection_positions_2 = np.zeros((num_clean_point, 2), dtype=np.float32)
+    # # TODO: Vectorize this process
+    # for i in range(2):
+    #     projection_matrix = pair_projections[i]
+    #     count = 0
+    #     for j in range(len(point_cloud)):
+    #         if clean_point_list[j] < 0.5:
+    #             continue
+    #         point_3d_position = np.asarray(point_cloud[j])
+    #         point_projected_undistorted = np.asarray(projection_matrix).dot(point_3d_position)
+    #         point_projected_undistorted = point_projected_undistorted / point_projected_undistorted[2]
+    #
+    #         if np.isnan(point_projected_undistorted[0]) or np.isnan(point_projected_undistorted[1]):
+    #             continue
+    #
+    #         round_u = int(round(point_projected_undistorted[0]))
+    #         round_v = int(round(point_projected_undistorted[1]))
+    #
+    #         if i == 0:
+    #             point_projection_positions_1[count][0] = round_u
+    #             point_projection_positions_1[count][1] = round_v
+    #
+    #         elif i == 1:
+    #             point_projection_positions_2[count][0] = round_u
+    #             point_projection_positions_2[count][1] = round_v
+    #
+    #         count += 1
+    #
+    # count = 0
+    # feature_matching = list()
+    # frame_index_1 = pair_indexes[0]
+    # frame_index_2 = pair_indexes[1]
+    # for i in range(len(point_cloud)):
+    #     if clean_point_list[i] < 0.5:
+    #         continue
+    #     u = point_projection_positions_1[count][0]
+    #     v = point_projection_positions_1[count][1]
+    #     u2 = point_projection_positions_2[count][0]
+    #     v2 = point_projection_positions_2[count][1]
+    #     count += 1
+    #     if 0 <= u < width and 0 <= v < height and 0 <= u2 < width and 0 <= v2 < height:
+    #         if mask_boundary[int(v), int(u)] > 220 and mask_boundary[int(v2), int(u2)] > 220:
+    #             if view_indexes_per_point[i][frame_index_1] > 0.5 and \
+    #                     view_indexes_per_point[i][frame_index_2] > 0.5:
+    #                 feature_matching.append(np.asarray([u, v, u2, v2]))
+    #
+    # return feature_matching
+
     # for i in range(2):
     #     projection_matrix = pair_projections[i]
     #     count = 0
@@ -903,3 +1012,35 @@ def feature_matching_single(color_1, color_2, feature_map_1, feature_map_2, kps_
         display_matches_craft = cv2.drawMatches(color_1, kps_1, color_2, kps_2, good, flags=2,
                                                 outImg=None)
         return display_matches_ai, display_matches_craft
+
+
+def get_file_names_in_sequence(sequence_root):
+    path = sequence_root / 'visible_view_indexes'
+    if not path.exists():
+        return []
+
+    visible_view_indexes = read_visible_view_indexes(sequence_root)
+    filenames = []
+    for index in visible_view_indexes:
+        filenames.append(sequence_root / "{:08d}.jpg".format(index))
+    return filenames
+
+
+def read_color_img(image_path, start_h, end_h, start_w, end_w, downsampling_factor):
+    img = cv2.imread(str(image_path))
+    downsampled_img = cv2.resize(img, (0, 0), fx=1. / downsampling_factor, fy=1. / downsampling_factor)
+    downsampled_img = downsampled_img[start_h:end_h, start_w:end_w, :]
+    downsampled_img = cv2.cvtColor(downsampled_img, cv2.COLOR_BGR2RGB)
+    downsampled_img = downsampled_img.astype(np.float32)
+    return downsampled_img
+
+
+def save_model(model, optimizer, epoch, step, model_path, validation_loss):
+    torch.save({
+        'model': model.state_dict(),
+        'optimizer': optimizer.state_dict(),
+        'epoch': epoch,
+        'step': step,
+        'validation': validation_loss
+    }, str(model_path))
+    return

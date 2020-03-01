@@ -229,3 +229,40 @@ class FeatureResponseGenerator(nn.Module):
         cosine_distance_map = cosine_distance_map / torch.sum(cosine_distance_map, dim=(2, 3), keepdim=True)
 
         return cosine_distance_map
+
+
+class FeatureResponseGeneratorNoSoftThresholding(nn.Module):
+    def __init__(self):
+        super(FeatureResponseGeneratorNoSoftThresholding, self).__init__()
+
+    def forward(self, x):
+        source_feature_map, target_feature_map, source_feature_1D_locations, boundaries = x
+
+        # source_feature_map: B x C x H x W
+        # source_feature_1D_locations: B x Sampling_size x 1
+        batch_size, channel, height, width = source_feature_map.shape
+        _, sampling_size, _ = source_feature_1D_locations.shape
+        # B x C x Sampling_size
+        source_feature_1D_locations = source_feature_1D_locations.view(batch_size, 1,
+                                                                       sampling_size).expand(-1, channel, -1)
+        # Extend 1D locations to B x C x Sampling_size
+        # B x C x Sampling_size
+        sampled_feature_vectors = torch.gather(source_feature_map.view(batch_size, channel, height * width), 2,
+                                               source_feature_1D_locations.long())
+        sampled_feature_vectors = sampled_feature_vectors.view(batch_size, channel, sampling_size, 1,
+                                                               1).permute(0, 2, 1, 3, 4).view(batch_size,
+                                                                                              sampling_size,
+                                                                                              channel,
+                                                                                              1, 1)
+
+        # Do convolution on target_feature_map with the sampled_feature_vectors as the kernels
+        # We use the sampled feature vectors in a convolution operation where BC is the input channel dim and
+        # Sampling_size as the output channel dim.
+        temp = [None for _ in range(batch_size)]
+        for i in range(batch_size):
+            temp[i] = torch.nn.functional.conv2d(input=target_feature_map[i].view(1, channel, height, width),
+                                                 weight=sampled_feature_vectors[i].view(sampling_size, channel,
+                                                                                        1, 1), padding=0)
+        # B x Sampling_size x H x W
+        cosine_distance_map = torch.cat(temp, dim=0)
+        return cosine_distance_map
