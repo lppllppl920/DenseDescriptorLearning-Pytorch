@@ -11,7 +11,7 @@ This codebase implements the method described in the paper:
 
 Xingtong Liu, Yiping Zheng, Benjamin Killeen, Masaru Ishii, Gregory D. Hager, Russell H. Taylor, Mathias Unberath
 
-In ***Conference on Computer Vision and Pattern Recognition (CVPR) 2020***
+In ***2020 Conference on Computer Vision and Pattern Recognition (CVPR)***
 
 Please contact [**Xingtong Liu**](http://www.cs.jhu.edu/~xingtongl/) (xliu89@jh.edu) if you have any questions.
 
