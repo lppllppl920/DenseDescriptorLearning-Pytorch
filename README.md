@@ -2,7 +2,7 @@
 
 ![Ours](point_cloud_overlay_fm_only_spatial_grouping.gif) ![SIFT](point_cloud_overlay_SIFT.gif)
 
-*The video on the left is the video overlay of the SfM results estimated with our proposed dense descriptor. The video on the right is the SfM results using SIFT"
+*The video on the left is the video overlay of the SfM results estimated with our proposed dense descriptor. The video on the right is the SfM results using SIFT*
 
 
 This codebase implements the method described in the paper:
