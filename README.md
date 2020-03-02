@@ -29,10 +29,10 @@ We kindly ask you to cite [this paper (to be uploaded)]() if the code is used in
 ```
 /path/to/python /path/to/train.py --adjacent_range 1 50 --image_downsampling 4.0 --network_downsampling 64 --input_size 256 320 --id_range 1 --batch_size 4 --num_workers 4 --num_pre_workers 4 --lr_range 1.0e-4 1.0e-3 --validation_interval 1 --display_interval 20 --rr_weight 1.0 --inlier_percentage 0.99 --training_patient_id 1 --testing_patient_id 1 --validation_patient_id 1 --num_epoch 100 --num_iter 3000 --display_architecture --load_intermediate_data --sampling_size 10 --log_root "/path/to/training/directory" --training_data_root "/path/to/training/data" --feature_length 256 --filter_growth_rate 10 --matching_scale 20.0 --matching_threshold 0.9 --cross_check_distance 5.0 --heatmap_sigma 5.0 --visibility_overlap 20 
 ```
- 4. Add additional arguments ```--load_trained_model --trained_model_path "\path\to\trained\model"``` to continue previous training. Run ```tensorboard``` to visualize training progress. One example is: ```tensorboard --logdir="/path/to/training/directory/"```.
+4. Add additional arguments ```--load_trained_model --trained_model_path "\path\to\trained\model"``` to continue previous training. Run ```tensorboard``` to visualize training progress. One example is: ```tensorboard --logdir="/path/to/training/directory/"```.
 
 
-4. Run ```test.py``` with proper arguments to evaluate the pair-wise feature matching performance of the learned dense descriptor model. One example is:
+5. Run ```test.py``` with proper arguments to evaluate the pair-wise feature matching performance of the learned dense descriptor model. One example is:
 ```
 /path/to/python /path/to/test.py --adjacent_range 1 50 --image_downsampling 4.0 --network_downsampling 64 --input_size 256 320 --num_workers 4 --num_pre_workers 4 --inlier_percentage 0.99 --testing_patient_id 1 --load_intermediate_data --visibility_overlap 20
 --display_architecture --trained_model_path "/path/to/trained/model" --testing_data_root "/path/to/testing/data" --log_root "/path/to/testing/directory" --feature_length 256 --filter_growth_rate 10 --keypoints_per_iter 3000 --gpu_id 0
