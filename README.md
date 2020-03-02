@@ -15,20 +15,8 @@ In ***Conference on Computer Vision and Pattern Recognition (CVPR) 2020***
 
 Please contact [**Xingtong Liu**](http://www.cs.jhu.edu/~xingtongl/) (xliu89@jh.edu) if you have any questions.
 
-We kindly ask you to cite [this paper](TODO:) if the code is used in your own work.
+We kindly ask you to cite [this paper]() if the code is used in your own work.
 ```
-@ARTICLE{liu2019dense,
-author={X. {Li} and A. {Sinha} and M. {Ishii} and G. D. {Hager} and A. {Reiter} and R. H. {Taylor} and M. {Unberath}},
-journal={IEEE Transactions on Medical Imaging},
-title={Dense Depth Estimation in Monocular Endoscopy with Self-supervised Learning Methods},
-year={2019},
-volume={},
-number={},
-pages={1-1},
-keywords={Estimation;Endoscopes;Cameras;Videos;Training;Image reconstruction;Three-dimensional displays;Endoscopy;unsupervised learning;selfsupervised learning;depth estimation},
-doi={10.1109/TMI.2019.2950936},
-ISSN={},
-month={},}
 ```
 
 ## Instructions
