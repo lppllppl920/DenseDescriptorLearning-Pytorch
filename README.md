@@ -13,7 +13,7 @@ Xingtong Liu, Yiping Zheng, Benjamin Killeen, Masaru Ishii, Gregory D. Hager, Ru
 
 In ***2020 Conference on Computer Vision and Pattern Recognition (CVPR)***
 
-Please contact [**Xingtong Liu**](http://www.cs.jhu.edu/~xingtongl/) (xliu89@jh.edu) if you have any questions.
+Please contact [**Xingtong Liu**](http://www.cs.jhu.edu/~xingtongl/) (xingtongliu@jhu.edu) or [**Mathias Unberath**] (unberath@jhu.edu) if you have any questions.
 
 We kindly ask you to cite [this paper]() if the code is used in your own work.
 ```
