@@ -106,7 +106,7 @@ if __name__ == '__main__':
 
     with torch.no_grad():
         for patient_id in id_range:
-            patient_root = Path(data_root) / "bag_{}".format(patient_id)
+            patient_root = Path(data_root) / "{}".format(patient_id)
             sub_folders = list(data_root.glob("_start*/"))
             sub_folders.sort()
             print(sub_folders)

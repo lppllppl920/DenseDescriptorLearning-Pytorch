@@ -1121,7 +1121,7 @@ def extract_keypoints(descriptor, colors_list, boundary, height, width):
 def get_all_subfolder_names(root, id_range):
     folder_list = []
     for i in id_range:
-        folder_list += list(root.glob('bag_' + str(i) + '/_start*/'))
+        folder_list += list(root.glob('{}/_start*/'.format(i)))
     folder_list.sort()
     return folder_list
 
