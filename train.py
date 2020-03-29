@@ -74,8 +74,8 @@ if __name__ == '__main__':
     parser.add_argument('--sampling_size', type=int, default=10,
                         help='number of positive sample pairs per iteration')
     parser.add_argument('--log_root', type=str, required=True, help='root of logging')
-    parser.add_argument('--feature_length', type=int, default=128, help='output channel dimension of network')
-    parser.add_argument('--filter_growth_rate', type=int, default=12, help='filter growth rate of network')
+    parser.add_argument('--feature_length', type=int, default=256, help='output channel dimension of network')
+    parser.add_argument('--filter_growth_rate', type=int, default=10, help='filter growth rate of network')
     parser.add_argument('--matching_scale', type=float, default=20.0, help='scale for soft thresholding')
     parser.add_argument('--matching_threshold', type=float, default=0.9, help='threshold for soft thresholding')
     parser.add_argument('--rr_weight', type=float, default=1.0, help='weight of relative response loss')

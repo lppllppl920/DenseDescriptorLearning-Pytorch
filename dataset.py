@@ -113,10 +113,11 @@ def find_common_valid_size(folder_list, image_downsampling, network_downsampling
 
 
 class SfMDataset(Dataset):
-    def __init__(self, image_file_names, folder_list, adjacent_range,
-                 image_downsampling, network_downsampling, inlier_percentage, load_intermediate_data,
-                 intermediate_data_root, phase, visible_interval, pre_workers, num_iter=None, sampling_size=10,
-                 heatmap_sigma=5.0):
+    def __init__(self, image_file_names, folder_list,
+                 image_downsampling, network_downsampling, load_intermediate_data,
+                 intermediate_data_root, phase, visible_interval=30, pre_workers=12, inlier_percentage=0.998,
+                 adjacent_range=(1, 1), num_iter=None,
+                 sampling_size=10, heatmap_sigma=5.0):
 
         self.image_file_names = sorted(image_file_names)
         self.folder_list = folder_list
@@ -146,8 +147,7 @@ class SfMDataset(Dataset):
         self.estimated_scale_per_seq = {}
 
         precompute_path = intermediate_data_root / (
-            "precompute_{}_{}_{}.pkl".format(self.image_downsampling, self.network_downsampling,
-                                             self.inlier_percentage))
+            "precompute_{}_{}.pkl".format(self.image_downsampling, self.network_downsampling))
 
         # Save all intermediate results to hard disk for quick access later on
         if not load_intermediate_data or not precompute_path.exists():
@@ -491,3 +491,27 @@ class SfMDataset(Dataset):
             training_mask_boundary[training_mask_boundary > 0.9] = 1.0
             training_mask_boundary[training_mask_boundary <= 0.9] = 0.0
             return [torch.cat(img_list, dim=0), feature_matches_list, img_to_tensor(training_mask_boundary)]
+
+        elif self.phase == 'image_loading':
+            img_file_name = self.image_file_names[idx]
+            # Retrieve the folder path
+            folder_str = str(img_file_name.parent)
+
+            start_h, end_h, start_w, end_w = self.crop_positions_per_seq[folder_str]
+            color_img = utils.read_color_img(img_file_name, start_h, end_h, start_w, end_w,
+                                             self.image_downsampling)
+            training_color_img_1 = color_img
+            height, width, _ = training_color_img_1.shape
+
+            training_mask_boundary = utils.type_float_and_reshape(
+                self.mask_boundary_per_seq[folder_str].astype(np.float32) / 255.0,
+                (height, width, 1))
+            training_mask_boundary[training_mask_boundary > 0.9] = 1.0
+            training_mask_boundary[training_mask_boundary <= 0.9] = 0.0
+
+            # Normalize
+            training_color_img_1 = self.normalize(image=training_color_img_1)['image']
+
+            return [img_to_tensor(training_color_img_1),
+                    img_to_tensor(training_mask_boundary),
+                    str(img_file_name), folder_str, start_h, start_w]
