@@ -1,11 +1,12 @@
-import os
+import sys
+if '/opt/ros/kinetic/lib/python2.7/dist-packages' in sys.path:
+    sys.path.remove('/opt/ros/kinetic/lib/python2.7/dist-packages')
 import argparse
 from pathlib import Path
 import sys
 import sqlite3
 import numpy as np
 import cv2
-import shutil
 import h5py
 import tqdm
 from skimage.measure import ransac
@@ -216,21 +217,12 @@ if __name__ == "__main__":
         print("ERROR: feature matches hdf5 does not exist")
         exit()
 
-    images_root = (sequence_root / "images")
-    if not images_root.exists():
-        images_root.mkdir(parents=False)
-
+    images_root = sequence_root
     # Open the database.
     db = COLMAPDatabase.connect(str(database_path))
 
     # For convenience, try creating all the tables upfront.
     db.create_tables()
-
-    image_list = list(sequence_root.glob("0*.jpg"))
-    image_list.sort()
-    if len(image_list) != 0:
-        for image_path in image_list:
-            shutil.move(str(image_path), str(images_root / image_path.name))
 
     image_list = list(images_root.glob("0*.jpg"))
     image_list.sort()
@@ -317,7 +309,7 @@ if __name__ == "__main__":
         model, inliers = ransac((pair_matches[:, :2],
                                  pair_matches[:, 2:]),
                                 FundamentalMatrixTransform, min_samples=8,
-                                residual_threshold=5.0, max_trials=10)
+                                residual_threshold=10.0, max_trials=10)
 
         pair_matches = pair_matches.astype(np.long)
         pair_matches = np.concatenate([(pair_matches[:, 0] + pair_matches[:, 1] * width).reshape((-1, 1)),

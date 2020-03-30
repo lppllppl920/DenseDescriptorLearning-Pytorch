@@ -328,7 +328,7 @@ class SfMDataset(Dataset):
                 return max(self.num_iter, len(self.image_file_names))
             else:
                 return len(self.image_file_names)
-        elif self.phase == "test":
+        else:
             return len(self.image_file_names)
 
     def __getitem__(self, idx):

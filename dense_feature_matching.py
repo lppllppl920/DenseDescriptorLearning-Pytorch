@@ -8,6 +8,9 @@ terms of the GNU GENERAL PUBLIC LICENSE Version 3 license for non-commercial usa
 You should have received a copy of the GNU GENERAL PUBLIC LICENSE Version 3 license with
 this file. If not, please write to: xliu89@jh.edu or unberath@jhu.edu
 '''
+import sys
+if '/opt/ros/kinetic/lib/python2.7/dist-packages' in sys.path:
+    sys.path.remove('/opt/ros/kinetic/lib/python2.7/dist-packages')
 import cv2
 import numpy as np
 from pathlib import Path
@@ -18,7 +21,6 @@ import multiprocessing
 import tqdm
 from skimage.measure import ransac
 from skimage.transform import FundamentalMatrixTransform
-
 # Local
 import utils
 
@@ -107,13 +109,12 @@ if __name__ == '__main__':
     with torch.no_grad():
         for patient_id in id_range:
             patient_root = Path(data_root) / "{}".format(patient_id)
-            sub_folders = list(data_root.glob("_start*/"))
+            sub_folders = list(patient_root.glob("_start*/"))
             sub_folders.sort()
-            print(sub_folders)
             for sub_folder in sub_folders:
                 path = sub_folder / "feature_matches.hdf5"
-                if path.exists():
-                    continue
+                # if path.exists():
+                #     continue
 
                 # If a specific sequence root is provided, only calculate the feature matching for that sequence
                 if sequence_root is not None:

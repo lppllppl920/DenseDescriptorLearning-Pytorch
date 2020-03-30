@@ -1127,7 +1127,7 @@ def get_all_subfolder_names(root, id_range):
 
 
 def get_all_color_image_names_in_sequence(sequence_root):
-    _, view_indexes = read_selected_indexes(sequence_root)
+    view_indexes = read_selected_indexes(sequence_root)
     filenames = []
     for index in view_indexes:
         filenames.append(sequence_root / "{:08d}.jpg".format(index))
