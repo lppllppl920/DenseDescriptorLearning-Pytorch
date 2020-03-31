@@ -1,40 +1,3 @@
-    parser.add_argument('--image_downsampling', type=float, default=4.0,
-                        help='input image downsampling rate')
-    parser.add_argument('--network_downsampling', type=int, default=64, help='network bottom layer downsampling')
-    parser.add_argument('--input_size', nargs='+', type=int, required=True,
-                        help='input size')
-    parser.add_argument('--batch_size', type=int, default=8, help='batch size for testing')
-    parser.add_argument('--num_workers', type=int, default=8, help='number of workers for input data loader')
-    parser.add_argument('--load_intermediate_data', action='store_true', help='whether to load intermediate data')
-    parser.add_argument('--data_root', type=str, required=True, help='path to the data for '
-                                                                     'feature matching')
-    parser.add_argument('--sequence_root', type=str, default=None,
-                        help='root of the specific video sequence')
-    parser.add_argument('--trained_model_path', type=str, required=True, help='path to the trained model')
-    parser.add_argument('--feature_length', type=int, default=256, help='output channel dimension of network')
-    parser.add_argument('--filter_growth_rate', type=int, default=10, help='filter growth rate of network')
-    parser.add_argument('--max_feature_detection', type=int, default=3000,
-                        help='max allowed number of detected features per frame')
-    parser.add_argument('--cross_check_distance', type=float, default=5.0,
-                        help='max cross check distance for valid matches')
-    parser.add_argument('--id_range', nargs='+', type=int,
-                        help='range of patient ids')
-    parser.add_argument('--gpu_id', type=int, default=0, help='gpu id for matching generation')
-    parser.add_argument('--temporal_range', type=int, default=30, help='range for temporal sampling')
-    parser.add_argument('--test_keypoint_num', type=int, default=200, help='number of keypoints used for quick '
-                                                                           'spatial testing')
-    parser.add_argument('--residual_threshold', type=float, default=5.0, help='pixel threshold for ransac estimation')
-    parser.add_argument('--octave_layers', type=int, default=8)
-    parser.add_argument('--contrast_threshold', type=float, default=0.00005)
-    parser.add_argument('--edge_threshold', type=float, default=100)
-    parser.add_argument('--sigma', type=float, default=1.1)
-    parser.add_argument('--skip_interval', type=int, default=5,
-                        help="number of skipping frames in searching state")
-    parser.add_argument('--min_inlier_ratio', type=float, default=0.2,
-                        help="minimum inlier ratio of ransac")
-    parser.add_argument('--hysterisis_factor', type=float, default=0.7,
-                        help="factor of the inlier ratio in the spatial_range state")
-
 --image_downsampling
 4.0
 --network_downsampling
@@ -49,9 +12,9 @@
 --data_root
 "/home/xingtong/Research/DenseDescriptorLearning-Pytorch/example_training_data_root"
 --sequence_root
-"/home/xingtong/Research/DenseDescriptorLearning-Pytorch/example_training_data_root/1/_start_004259_end_004629_stride_25_segment_13"
+"/home/xingtong/Research/DenseDescriptorLearning-Pytorch/example_training_data_root/1/_start_002603_end_002984_stride_1000_segment_00"
 --trained_model_path
-"/home/xingtong/Research/DenseDescriptorLearning-Pytorch/Train/checkpoint_model_epoch_0_0.7674000118970872_0.832900013923645_0.904550008058548.pt"
+"/home/xingtong/gpu121/Train/feature_descriptor_run_3_10_2_18/checkpoint_model_epoch_32_0.5033751019564365_0.5777206525684425_0.6577131743441852.pt"
 --feature_length
 256
 --filter_growth_rate
