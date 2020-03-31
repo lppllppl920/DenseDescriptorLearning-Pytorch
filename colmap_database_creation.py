@@ -213,6 +213,9 @@ if __name__ == "__main__":
     output_root = Path(args.output_root)
     feature_match_path = Path(args.feature_match_path)
 
+    if not output_root.exists():
+        output_root.mkdir(parents=True)
+        
     database_path = output_root / "database.db"
     if database_path.exists():
         print("ERROR: database exists already")

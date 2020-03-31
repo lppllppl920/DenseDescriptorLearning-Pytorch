@@ -13,6 +13,8 @@
 "/home/xingtong/Research/DenseDescriptorLearning-Pytorch/example_training_data_root"
 --sequence_root
 "/home/xingtong/Research/DenseDescriptorLearning-Pytorch/example_training_data_root/1/_start_002603_end_002984_stride_1000_segment_00"
+--output_root
+"/home/xingtong/Research/DenseDescriptorLearning-Pytorch/example_training_data_root/1/_start_002603_end_002984_stride_1000_segment_00"
 --trained_model_path
 "/home/xingtong/gpu121/Train/feature_descriptor_run_3_10_2_18/checkpoint_model_epoch_32_0.5033751019564365_0.5777206525684425_0.6577131743441852.pt"
 --feature_length
