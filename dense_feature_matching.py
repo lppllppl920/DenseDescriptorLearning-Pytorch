@@ -9,6 +9,7 @@ You should have received a copy of the GNU GENERAL PUBLIC LICENSE Version 3 lice
 this file. If not, please write to: xliu89@jh.edu or unberath@jhu.edu
 '''
 import sys
+
 if '/opt/ros/kinetic/lib/python2.7/dist-packages' in sys.path:
     sys.path.remove('/opt/ros/kinetic/lib/python2.7/dist-packages')
 import cv2
@@ -40,8 +41,10 @@ if __name__ == '__main__':
     parser.add_argument('--load_intermediate_data', action='store_true', help='whether to load intermediate data')
     parser.add_argument('--data_root', type=str, required=True, help='path to the data for '
                                                                      'feature matching')
-    parser.add_argument('--sequence_root', type=str, default=None,
+    parser.add_argument('--sequence_root', type=str, required=True,
                         help='root of the specific video sequence')
+    parser.add_argument('--output_root', type=str, required=True,
+                        help='root of output feature matches in hdf5 format')
     parser.add_argument('--trained_model_path', type=str, required=True, help='path to the trained model')
     parser.add_argument('--feature_length', type=int, default=256, help='output channel dimension of network')
     parser.add_argument('--filter_growth_rate', type=int, default=10, help='filter growth rate of network')
@@ -79,6 +82,7 @@ if __name__ == '__main__':
     sequence_root = args.sequence_root
     trained_model_path = Path(args.trained_model_path)
     data_root = Path(args.data_root)
+    output_root = Path(args.output_root)
     max_feature_detection = args.max_feature_detection
     cross_check_distance = args.cross_check_distance
     gpu_id = args.gpu_id
@@ -95,242 +99,228 @@ if __name__ == '__main__':
     min_inlier_ratio = args.min_inlier_ratio
     hysterisis_factor = args.hysterisis_factor
 
+    if not output_root.exists():
+        output_root.mkdir(parents=True)
+
     precompute_root = data_root / "precompute"
-    try:
-        precompute_root.mkdir(mode=0o777, parents=True)
-    except OSError:
-        pass
+    if not precompute_root.exists():
+        precompute_root.mkdir(parents=True)
 
     print("SIFT detector creating...")
     sift = cv2.xfeatures2d.SIFT_create(nfeatures=max_feature_detection, nOctaveLayers=octave_layers,
                                        contrastThreshold=contrast_threshold,
                                        edgeThreshold=edge_threshold, sigma=sigma)
 
-    with torch.no_grad():
-        for patient_id in id_range:
-            patient_root = Path(data_root) / "{}".format(patient_id)
-            sub_folders = list(patient_root.glob("_start*/"))
-            sub_folders.sort()
-            for sub_folder in sub_folders:
-                path = sub_folder / "feature_matches.hdf5"
-                # if path.exists():
-                #     continue
+    colors_list, boundary, feature_maps_list, start_h, start_w = \
+        utils.gather_feature_matching_data(feature_descriptor_model_path=trained_model_path,
+                                           sub_folder=sequence_root,
+                                           data_root=data_root, image_downsampling=image_downsampling,
+                                           network_downsampling=network_downsampling,
+                                           load_intermediate_data=load_intermediate_data,
+                                           precompute_root=precompute_root,
+                                           batch_size=batch_size, id_range=id_range,
+                                           filter_growth_rate=filter_growth_rate,
+                                           feature_length=feature_length, gpu_id=gpu_id)
 
-                # If a specific sequence root is provided, only calculate the feature matching for that sequence
-                if sequence_root is not None:
-                    if str(sub_folder) != sequence_root:
-                        continue
+    # Erode the boundary to remove near-boundary matches
+    kernel = np.ones((5, 5), np.uint8)
+    boundary = cv2.erode(boundary, kernel, iterations=3)
 
-                colors_list, boundary, feature_maps_list, start_h, start_w = \
-                    utils.gather_feature_matching_data(feature_descriptor_model_path=trained_model_path,
-                                                       sub_folder=sub_folder,
-                                                       data_root=data_root, image_downsampling=image_downsampling,
-                                                       network_downsampling=network_downsampling,
-                                                       load_intermediate_data=load_intermediate_data,
-                                                       precompute_root=precompute_root,
-                                                       batch_size=batch_size, id_range=id_range,
-                                                       filter_growth_rate=filter_growth_rate,
-                                                       feature_length=feature_length, gpu_id=gpu_id)
+    f_matches = None
+    print("Extracting keypoint locations...")
+    sift_keypoints_list, sift_keypoint_location_list_1D, sift_keypoint_location_list_2D, sift_descriptions_list = \
+        utils.extract_keypoints(sift, colors_list, boundary, height, width)
 
-                # Erode the boundary to remove near-boundary matches
-                kernel = np.ones((5, 5), np.uint8)
-                boundary = cv2.erode(boundary, kernel, iterations=3)
+    f_matches = h5py.File(str(output_root / "feature_matches.hdf5"), 'w')
+    dataset_matches = f_matches.create_dataset('matches', (0, 4, 1),
+                                               maxshape=(None, 4, 1), chunks=(40960, 4, 1),
+                                               compression="gzip", compression_opts=9, dtype='int16')
 
-                f_matches = None
-                print("Extracting keypoint locations...")
-                sift_keypoints_list, sift_keypoint_location_list_1D, sift_keypoint_location_list_2D, sift_descriptions_list = \
-                    utils.extract_keypoints(sift, colors_list, boundary, height, width)
+    feature_length, height, width = feature_maps_list[0].shape
+    frame_count_in_total = len(colors_list)
 
-                f_matches = h5py.File(str(sub_folder / "feature_matches.hdf5"), 'w')
-                dataset_matches = f_matches.create_dataset('matches', (0, 4, 1),
-                                                           maxshape=(None, 4, 1), chunks=(40960, 4, 1),
-                                                           compression="gzip", compression_opts=9, dtype='int16')
+    tq = tqdm.tqdm(total=frame_count_in_total * (frame_count_in_total - 1) // 2)
+    for i in range(frame_count_in_total - 1):
+        color_1 = colors_list[i]
+        feature_map_1 = feature_maps_list[i].cuda(gpu_id)
 
-                feature_length, height, width = feature_maps_list[0].shape
-                frame_count_in_total = len(colors_list)
+        sift_keypoint_1 = sift_keypoints_list[i]
+        np.random.seed(10086)
+        random_indexes = list(np.random.choice(range(0, len(sift_keypoint_1)), test_keypoint_num,
+                                               replace=False))
+        sift_keypoint_locations_1D_1 = sift_keypoint_location_list_1D[i]
+        sift_keypoint_locations_2D_1 = sift_keypoint_location_list_2D[i]
+        cur_state = "temporal_range"
+        for j in range(1, len(colors_list) - i):
+            tq.set_description(cur_state)
 
-                tq = tqdm.tqdm(total=frame_count_in_total * (frame_count_in_total - 1) // 2)
-                for i in range(frame_count_in_total - 1):
-                    color_1 = colors_list[i]
-                    feature_map_1 = feature_maps_list[i].cuda(gpu_id)
+            if cur_state == "temporal_range":
+                if j > temporal_range:
+                    cur_state = "searching"
 
-                    sift_keypoint_1 = sift_keypoints_list[i]
-                    np.random.seed(10086)
-                    random_indexes = list(np.random.choice(range(0, len(sift_keypoint_1)), test_keypoint_num,
-                                                           replace=False))
-                    sift_keypoint_locations_1D_1 = sift_keypoint_location_list_1D[i]
-                    sift_keypoint_locations_2D_1 = sift_keypoint_location_list_2D[i]
-                    cur_state = "temporal_range"
-                    for j in range(1, len(colors_list) - i):
-                        tq.set_description(cur_state)
+            if cur_state == "searching":
+                if j % skip_interval != 0:
+                    tq.update(1)
+                    continue
 
-                        if cur_state == "temporal_range":
-                            if j > temporal_range:
-                                cur_state = "searching"
+            if cur_state == "spatial_range":
+                pass
 
-                        if cur_state == "searching":
-                            if j % skip_interval != 0:
-                                tq.update(1)
-                                continue
+            color_2 = colors_list[i + j]
+            feature_map_2 = feature_maps_list[i + j].cuda(gpu_id)
 
-                        if cur_state == "spatial_range":
-                            pass
+            if cur_state == "temporal_range" or cur_state == "spatial_range":
+                x = utils.feature_matching_single_generation(
+                    feature_map_1=feature_map_1,
+                    feature_map_2=feature_map_2,
+                    kps_1D_1=sift_keypoint_locations_1D_1,
+                    cross_check_distance=cross_check_distance,
+                    gpu_id=gpu_id)
+            elif cur_state == "searching":
+                x = utils.feature_matching_single_generation(
+                    feature_map_1=feature_map_1,
+                    feature_map_2=feature_map_2,
+                    kps_1D_1=sift_keypoint_locations_1D_1[random_indexes],
+                    cross_check_distance=cross_check_distance,
+                    gpu_id=gpu_id)
 
-                        color_2 = colors_list[i + j]
-                        feature_map_2 = feature_maps_list[i + j].cuda(gpu_id)
+            if x is None:
+                tq.update(1)
+                continue
 
-                        if cur_state == "temporal_range" or cur_state == "spatial_range":
-                            x = utils.feature_matching_single_generation(
-                                feature_map_1=feature_map_1,
-                                feature_map_2=feature_map_2,
-                                kps_1D_1=sift_keypoint_locations_1D_1,
-                                cross_check_distance=cross_check_distance,
-                                gpu_id=gpu_id)
-                        elif cur_state == "searching":
-                            x = utils.feature_matching_single_generation(
-                                feature_map_1=feature_map_1,
-                                feature_map_2=feature_map_2,
-                                kps_1D_1=sift_keypoint_locations_1D_1[random_indexes],
-                                cross_check_distance=cross_check_distance,
-                                gpu_id=gpu_id)
+            source_keypoint_indexes, target_keypoint_locations = x
 
-                        if x is None:
-                            tq.update(1)
-                            continue
+            if cur_state == "searching":
+                source_keypoint_indexes = [random_indexes[source_keypoint_index] for
+                                           source_keypoint_index in source_keypoint_indexes]
 
-                        source_keypoint_indexes, target_keypoint_locations = x
+            source_keypoint_locations = sift_keypoint_locations_2D_1[source_keypoint_indexes,
+                                        :].reshape((-1, 2))
+            source_keypoint_locations[:, 0] = image_downsampling * (
+                    source_keypoint_locations[:, 0] + start_w)
+            source_keypoint_locations[:, 1] = image_downsampling * (
+                    source_keypoint_locations[:, 1] + start_h)
 
-                        if cur_state == "searching":
-                            source_keypoint_indexes = [random_indexes[source_keypoint_index] for
-                                                       source_keypoint_index in source_keypoint_indexes]
+            target_keypoint_locations[:, 0] = image_downsampling * (
+                    target_keypoint_locations[:, 0] + start_w)
+            target_keypoint_locations[:, 1] = image_downsampling * (
+                    target_keypoint_locations[:, 1] + start_h)
 
-                        source_keypoint_locations = sift_keypoint_locations_2D_1[source_keypoint_indexes,
-                                                    :].reshape((-1, 2))
-                        source_keypoint_locations[:, 0] = image_downsampling * (
-                                source_keypoint_locations[:, 0] + start_w)
-                        source_keypoint_locations[:, 1] = image_downsampling * (
-                                source_keypoint_locations[:, 1] + start_h)
+            try:
+                model, inliers = ransac((source_keypoint_locations,
+                                         target_keypoint_locations),
+                                        FundamentalMatrixTransform, min_samples=8,
+                                        residual_threshold=residual_threshold, max_trials=5)
+            except ValueError:
+                tq.set_postfix(
+                    source_frame_index='{:d}'.format(i),
+                    target_frame_index='{:d}'.format(i + j),
+                    point_num='{:d}'.format(target_keypoint_locations.shape[0]))
+                tq.update(1)
+                continue
 
-                        target_keypoint_locations[:, 0] = image_downsampling * (
-                                target_keypoint_locations[:, 0] + start_w)
-                        target_keypoint_locations[:, 1] = image_downsampling * (
-                                target_keypoint_locations[:, 1] + start_h)
+            inlier_ratio = np.sum(inliers) / source_keypoint_locations.shape[0]
 
-                        try:
-                            model, inliers = ransac((source_keypoint_locations,
-                                                     target_keypoint_locations),
-                                                    FundamentalMatrixTransform, min_samples=8,
-                                                    residual_threshold=residual_threshold, max_trials=5)
-                        except ValueError:
-                            tq.set_postfix(
-                                source_frame_index='{:d}'.format(i),
-                                target_frame_index='{:d}'.format(i + j),
-                                point_num='{:d}'.format(target_keypoint_locations.shape[0]))
-                            tq.update(1)
-                            continue
+            if j == 1:
+                mean_inlier_ratio = inlier_ratio
+            elif j <= temporal_range:
+                mean_inlier_ratio = mean_inlier_ratio * ((j - 1) / j) + inlier_ratio * (1 / j)
+            elif j == temporal_range + 1:
+                mean_inlier_ratio = max(min_inlier_ratio, mean_inlier_ratio)
 
-                        inlier_ratio = np.sum(inliers) / source_keypoint_locations.shape[0]
+            if cur_state == "temporal_range":
+                start_index = dataset_matches.shape[0]
+                dataset_matches.resize(
+                    (dataset_matches.shape[0] + target_keypoint_locations.shape[0] + 1, 4, 1))
+                dataset_matches[start_index, :, :] = np.asarray(
+                    [target_keypoint_locations.shape[0], i, i + j, -1]).reshape((4, 1))
 
-                        if j == 1:
-                            mean_inlier_ratio = inlier_ratio
-                        elif j <= temporal_range:
-                            mean_inlier_ratio = mean_inlier_ratio * ((j - 1) / j) + inlier_ratio * (1 / j)
-                        elif j == temporal_range + 1:
-                            mean_inlier_ratio = max(min_inlier_ratio, mean_inlier_ratio)
+                dataset_matches[start_index + 1:start_index + 1 + target_keypoint_locations.shape[0],
+                :] = \
+                    np.concatenate([source_keypoint_locations.reshape((-1, 2)),
+                                    target_keypoint_locations.reshape((-1, 2))], axis=1).reshape(
+                        (-1, 4, 1)).astype(np.int16)
+                tq.set_description(cur_state)
+                tq.set_postfix(
+                    source_frame_index='{:d}'.format(i),
+                    target_frame_index='{:d}'.format(i + j),
+                    mean_inlier_ratio='{:.3f}'.format(mean_inlier_ratio))
 
-                        if cur_state == "temporal_range":
-                            start_index = dataset_matches.shape[0]
-                            dataset_matches.resize(
-                                (dataset_matches.shape[0] + target_keypoint_locations.shape[0] + 1, 4, 1))
-                            dataset_matches[start_index, :, :] = np.asarray(
-                                [target_keypoint_locations.shape[0], i, i + j, -1]).reshape((4, 1))
+            elif cur_state == "searching":
+                if inlier_ratio >= mean_inlier_ratio:
+                    cur_state = "spatial_range"
+                    # Redo the feature matching with full set of keypoints
+                    x = utils.feature_matching_single_generation(
+                        feature_map_1=feature_map_1,
+                        feature_map_2=feature_map_2,
+                        kps_1D_1=sift_keypoint_locations_1D_1,
+                        cross_check_distance=cross_check_distance,
+                        gpu_id=gpu_id)
 
-                            dataset_matches[start_index + 1:start_index + 1 + target_keypoint_locations.shape[0],
-                            :] = \
-                                np.concatenate([source_keypoint_locations.reshape((-1, 2)),
-                                                target_keypoint_locations.reshape((-1, 2))], axis=1).reshape(
-                                    (-1, 4, 1)).astype(np.int16)
-                            tq.set_description(cur_state)
-                            tq.set_postfix(
-                                source_frame_index='{:d}'.format(i),
-                                target_frame_index='{:d}'.format(i + j),
-                                mean_inlier_ratio='{:.3f}'.format(mean_inlier_ratio))
+                    source_keypoint_indexes, target_keypoint_locations = x
+                    source_keypoint_locations = sift_keypoint_locations_2D_1[source_keypoint_indexes,
+                                                :].reshape((-1, 2))
+                    source_keypoint_locations[:, 0] = image_downsampling * (
+                            source_keypoint_locations[:, 0] + start_w)
+                    source_keypoint_locations[:, 1] = image_downsampling * (
+                            source_keypoint_locations[:, 1] + start_h)
 
-                        elif cur_state == "searching":
-                            if inlier_ratio >= mean_inlier_ratio:
-                                cur_state = "spatial_range"
-                                # Redo the feature matching with full set of keypoints
-                                x = utils.feature_matching_single_generation(
-                                    feature_map_1=feature_map_1,
-                                    feature_map_2=feature_map_2,
-                                    kps_1D_1=sift_keypoint_locations_1D_1,
-                                    cross_check_distance=cross_check_distance,
-                                    gpu_id=gpu_id)
+                    target_keypoint_locations[:, 0] = image_downsampling * (
+                            target_keypoint_locations[:, 0] + start_w)
+                    target_keypoint_locations[:, 1] = image_downsampling * (
+                            target_keypoint_locations[:, 1] + start_h)
 
-                                source_keypoint_indexes, target_keypoint_locations = x
-                                source_keypoint_locations = sift_keypoint_locations_2D_1[source_keypoint_indexes,
-                                                            :].reshape((-1, 2))
-                                source_keypoint_locations[:, 0] = image_downsampling * (
-                                        source_keypoint_locations[:, 0] + start_w)
-                                source_keypoint_locations[:, 1] = image_downsampling * (
-                                        source_keypoint_locations[:, 1] + start_h)
+                    start_index = dataset_matches.shape[0]
+                    dataset_matches.resize(
+                        (dataset_matches.shape[0] + target_keypoint_locations.shape[0] + 1, 4, 1))
+                    dataset_matches[start_index, :, :] = np.asarray(
+                        [target_keypoint_locations.shape[0], i, i + j, -1]).reshape((4, 1))
 
-                                target_keypoint_locations[:, 0] = image_downsampling * (
-                                        target_keypoint_locations[:, 0] + start_w)
-                                target_keypoint_locations[:, 1] = image_downsampling * (
-                                        target_keypoint_locations[:, 1] + start_h)
+                    dataset_matches[start_index + 1:start_index + 1 + target_keypoint_locations.shape[0],
+                    :] = \
+                        np.concatenate([source_keypoint_locations.reshape((-1, 2)),
+                                        target_keypoint_locations.reshape((-1, 2))], axis=1).reshape(
+                            (-1, 4, 1)).astype(np.int16)
+                    tq.set_description(cur_state)
+                    tq.set_postfix(
+                        source_frame_index='{:d}'.format(i),
+                        target_frame_index='{:d}'.format(i + j),
+                        inlier_ratio='{:.3f}'.format(inlier_ratio))
+                else:
+                    tq.set_description(cur_state)
+                    tq.set_postfix(
+                        source_frame_index='{:d}'.format(i),
+                        target_frame_index='{:d}'.format(i + j))
+            elif cur_state == "spatial_range":
+                # Leave a bit of hyterisis space for spatial_range state to allow for more frame matches
+                if inlier_ratio >= hysterisis_factor * mean_inlier_ratio:
+                    start_index = dataset_matches.shape[0]
+                    dataset_matches.resize(
+                        (dataset_matches.shape[0] + target_keypoint_locations.shape[0] + 1, 4, 1))
+                    dataset_matches[start_index, :, :] = np.asarray(
+                        [target_keypoint_locations.shape[0], i, i + j, -1]).reshape((4, 1))
 
-                                start_index = dataset_matches.shape[0]
-                                dataset_matches.resize(
-                                    (dataset_matches.shape[0] + target_keypoint_locations.shape[0] + 1, 4, 1))
-                                dataset_matches[start_index, :, :] = np.asarray(
-                                    [target_keypoint_locations.shape[0], i, i + j, -1]).reshape((4, 1))
+                    dataset_matches[start_index + 1:start_index + 1 + target_keypoint_locations.shape[0],
+                    :] = \
+                        np.concatenate([source_keypoint_locations.reshape((-1, 2)),
+                                        target_keypoint_locations.reshape((-1, 2))], axis=1).reshape(
+                            (-1, 4, 1)).astype(np.int16)
+                    tq.set_description(cur_state)
+                    tq.set_postfix(
+                        source_frame_index='{:d}'.format(i),
+                        target_frame_index='{:d}'.format(i + j),
+                        inlier_ratio='{:.3f}'.format(inlier_ratio))
+                else:
+                    cur_state = "searching"
+                    tq.set_description(cur_state)
+                    tq.set_postfix(
+                        source_frame_index='{:d}'.format(i),
+                        target_frame_index='{:d}'.format(i + j))
+                    tq.update(1)
+                    continue
 
-                                dataset_matches[start_index + 1:start_index + 1 + target_keypoint_locations.shape[0],
-                                :] = \
-                                    np.concatenate([source_keypoint_locations.reshape((-1, 2)),
-                                                    target_keypoint_locations.reshape((-1, 2))], axis=1).reshape(
-                                        (-1, 4, 1)).astype(np.int16)
-                                tq.set_description(cur_state)
-                                tq.set_postfix(
-                                    source_frame_index='{:d}'.format(i),
-                                    target_frame_index='{:d}'.format(i + j),
-                                    inlier_ratio='{:.3f}'.format(inlier_ratio))
-                            else:
-                                tq.set_description(cur_state)
-                                tq.set_postfix(
-                                    source_frame_index='{:d}'.format(i),
-                                    target_frame_index='{:d}'.format(i + j))
-                        elif cur_state == "spatial_range":
-                            # Leave a bit of hyterisis space for spatial_range state to allow for more frame matches
-                            if inlier_ratio >= hysterisis_factor * mean_inlier_ratio:
-                                start_index = dataset_matches.shape[0]
-                                dataset_matches.resize(
-                                    (dataset_matches.shape[0] + target_keypoint_locations.shape[0] + 1, 4, 1))
-                                dataset_matches[start_index, :, :] = np.asarray(
-                                    [target_keypoint_locations.shape[0], i, i + j, -1]).reshape((4, 1))
+            tq.update(1)
 
-                                dataset_matches[start_index + 1:start_index + 1 + target_keypoint_locations.shape[0],
-                                :] = \
-                                    np.concatenate([source_keypoint_locations.reshape((-1, 2)),
-                                                    target_keypoint_locations.reshape((-1, 2))], axis=1).reshape(
-                                        (-1, 4, 1)).astype(np.int16)
-                                tq.set_description(cur_state)
-                                tq.set_postfix(
-                                    source_frame_index='{:d}'.format(i),
-                                    target_frame_index='{:d}'.format(i + j),
-                                    inlier_ratio='{:.3f}'.format(inlier_ratio))
-                            else:
-                                cur_state = "searching"
-                                tq.set_description(cur_state)
-                                tq.set_postfix(
-                                    source_frame_index='{:d}'.format(i),
-                                    target_frame_index='{:d}'.format(i + j))
-                                tq.update(1)
-                                continue
-
-                        tq.update(1)
-
-                tq.close()
-                if f_matches is not None:
-                    f_matches.close()
+    tq.close()
+    if f_matches is not None:
+        f_matches.close()

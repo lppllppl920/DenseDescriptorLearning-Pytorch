@@ -1,4 +1,5 @@
 import sys
+
 if '/opt/ros/kinetic/lib/python2.7/dist-packages' in sys.path:
     sys.path.remove('/opt/ros/kinetic/lib/python2.7/dist-packages')
 import argparse
@@ -11,6 +12,7 @@ import h5py
 import tqdm
 from skimage.measure import ransac
 from skimage.transform import FundamentalMatrixTransform
+import shutil
 
 IS_PYTHON3 = sys.version_info[0] >= 3
 
@@ -203,29 +205,32 @@ class COLMAPDatabase(sqlite3.Connection):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Dense Descriptor Learning -- COLMAP database building',
                                      formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-    parser.add_argument("--sequence_root", type=str, required=True)
+    parser.add_argument("--sequence_root", type=str, required=True, help='root of video sequence')
+    parser.add_argument("--feature_match_path", type=str, required=True, help='path of feature matches in hdf5')
+    parser.add_argument("--output_root", type=str, required=True, help='root of output database file')
     args = parser.parse_args()
     sequence_root = Path(args.sequence_root)
+    output_root = Path(args.output_root)
+    feature_match_path = Path(args.feature_match_path)
 
-    database_path = sequence_root / "database.db"
+    database_path = output_root / "database.db"
     if database_path.exists():
         print("ERROR: database exists already")
         exit()
 
-    hdf5_path = sequence_root / "feature_matches.hdf5"
-    if not hdf5_path.exists():
+    if not feature_match_path.exists():
         print("ERROR: feature matches hdf5 does not exist")
         exit()
 
-    images_root = sequence_root
     # Open the database.
     db = COLMAPDatabase.connect(str(database_path))
 
     # For convenience, try creating all the tables upfront.
     db.create_tables()
 
-    image_list = list(images_root.glob("0*.jpg"))
+    image_list = list(sequence_root.glob("0*.jpg"))
     image_list.sort()
+
     image = cv2.imread(str(image_list[0]))
     height, width, _ = image.shape
 
@@ -244,7 +249,7 @@ if __name__ == "__main__":
         image_id_list.append(db.add_image(image_path.name, camera_id))
 
     # Create matches per image pair
-    f_matches = h5py.File(str(hdf5_path), 'r')
+    f_matches = h5py.File(str(feature_match_path), 'r')
     dataset_matches = f_matches['matches']
     start_index = 0
 
