@@ -1,8 +1,8 @@
 --colmap_exe_path
 "D:\Data\COLMAP\COLMAP-dev-windows\COLMAP.bat"
 --image_root
-"D:\Research\Projects\DenseDescriptorLearning-Pytorch\example_training_data_root\1\_start_002603_end_002984_stride_1000_segment_00"
+"D:\Data\WholeModelReconstruction_video\bag_1\_start_004259_end_004629_stride_1000_segment_00\images"
 --database_path
-"D:\Research\Projects\colmap\database.db"
+"D:\Data\WholeModelReconstruction_video\bag_1\_start_004259_end_004629_stride_1000_segment_00\database.db"
 --output_root
-"D:\Research\Projects\DenseDescriptorLearning-Pytorch\example_training_data_root\1\_start_002603_end_002984_stride_1000_segment_00\colmap"
+"D:\Data\WholeModelReconstruction_video\bag_1\_start_004259_end_004629_stride_1000_segment_00\colmap"
