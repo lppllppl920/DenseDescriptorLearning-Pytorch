@@ -208,18 +208,22 @@ if __name__ == "__main__":
     parser.add_argument("--sequence_root", type=str, required=True, help='root of video sequence')
     parser.add_argument("--feature_match_path", type=str, required=True, help='path of feature matches in hdf5')
     parser.add_argument("--output_root", type=str, required=True, help='root of output database file')
+    parser.add_argument("--overwrite_database", action="store_true")
+
     args = parser.parse_args()
     sequence_root = Path(args.sequence_root)
     output_root = Path(args.output_root)
     feature_match_path = Path(args.feature_match_path)
+    overwrite_database = args.overwrite_database
 
     if not output_root.exists():
         output_root.mkdir(parents=True)
-        
+
     database_path = output_root / "database.db"
-    if database_path.exists():
-        print("ERROR: database exists already")
-        exit()
+    if not overwrite_database:
+        if database_path.exists():
+            print("ERROR: database exists already")
+            exit()
 
     if not feature_match_path.exists():
         print("ERROR: feature matches hdf5 does not exist")
@@ -342,6 +346,8 @@ if __name__ == "__main__":
     tq.close()
     # Adding keypoints per image to database
     for image_id in image_id_list:
+        if str(image_id) not in keypoints_dict:
+            continue
         temp = np.asarray(keypoints_dict[str(image_id)])
         temp_1 = np.floor(temp.reshape((-1, 1)) / width)
         temp_2 = np.mod(temp.reshape((-1, 1)), width)
