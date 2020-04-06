@@ -9,7 +9,6 @@ from pathlib import Path
 import utils
 import argparse
 
-# TODO: Change to a better interface with argparse
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Dense Descriptor Learning -- point cloud - video overlay generation',
                                      formatter_class=argparse.ArgumentDefaultsHelpFormatter)
