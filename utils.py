@@ -8,7 +8,10 @@ terms of the GNU GENERAL PUBLIC LICENSE Version 3 license for non-commercial usa
 You should have received a copy of the GNU GENERAL PUBLIC LICENSE Version 3 license with
 this file. If not, please write to: xliu89@jh.edu or unberath@jhu.edu
 '''
+import sys
 
+if '/opt/ros/kinetic/lib/python2.7/dist-packages' in sys.path:
+    sys.path.remove('/opt/ros/kinetic/lib/python2.7/dist-packages')
 import cv2
 import numpy as np
 from plyfile import PlyData
@@ -18,6 +21,7 @@ import torch
 import torchvision.utils as vutils
 import tqdm
 import matplotlib.pyplot as plt
+from pathlib import Path
 
 import dataset
 import models
@@ -192,11 +196,7 @@ def read_point_cloud(path):
     plydata = PlyData.read(path)
     for n in range(plydata['vertex'].count):
         temp = list(plydata['vertex'][n])
-        temp[0] = temp[0]
-        temp[1] = temp[1]
-        temp[2] = temp[2]
-        temp.append(1.0)
-        lists_3D_points.append(temp)
+        lists_3D_points.append([temp[0], temp[1], temp[2], 1.0])
     return lists_3D_points
 
 
@@ -234,7 +234,6 @@ def read_pose_data(prefix_seq):
 def get_extrinsic_matrix_and_projection_matrix(poses, intrinsic_matrix, visible_view_count):
     projection_matrices = []
     extrinsic_matrices = []
-
     for i in range(visible_view_count):
         rigid_transform = quaternion_matrix(
             [poses["poses[" + str(i) + "]"]['orientation']['w'], poses["poses[" + str(i) + "]"]['orientation']['x'],
@@ -984,8 +983,8 @@ def gather_feature_matching_data(feature_descriptor_model_path, sub_folder, data
         raise OSError
     del state
 
-    video_frame_filenames = get_all_color_image_names_in_sequence(sub_folder / "images")
-    print("Gathering feature matching data for {}".format(sub_folder))
+    video_frame_filenames = get_all_color_image_names_in_sequence(sub_folder)
+    print("Gathering feature matching data for {}".format(str(sub_folder)))
     folder_list = get_all_subfolder_names(data_root, id_range)
     video_dataset = dataset.SfMDataset(image_file_names=video_frame_filenames,
                                        folder_list=folder_list,
@@ -1161,22 +1160,22 @@ def get_all_subfolder_names(root, id_range):
 
 
 def get_all_color_image_names_in_sequence(sequence_root):
-    view_indexes = read_selected_indexes(sequence_root)
+    view_indexes = read_selected_indexes(sequence_root / "colmap" / "0")
     filenames = []
     for index in view_indexes:
-        filenames.append(sequence_root / "{:08d}.jpg".format(index))
+        filenames.append(sequence_root / "images" / "{:08d}.jpg".format(index))
     return filenames
 
 
 def get_file_names_in_sequence(sequence_root):
-    path = sequence_root / 'visible_view_indexes'
+    path = sequence_root / "colmap" / "0" / 'visible_view_indexes'
     if not path.exists():
         return []
 
-    visible_view_indexes = read_visible_view_indexes(sequence_root)
+    visible_view_indexes = read_visible_view_indexes(sequence_root / "colmap" / "0")
     filenames = []
     for index in visible_view_indexes:
-        filenames.append(sequence_root / "{:08d}.jpg".format(index))
+        filenames.append(sequence_root / "images" / "{:08d}.jpg".format(index))
     return filenames
 
 

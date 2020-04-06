@@ -1,0 +1,44 @@
+    parser.add_argument('--adjacent_range', nargs='+', type=int, required=True,
+                        help='interval range for a pair of video frames')
+    parser.add_argument('--image_downsampling', type=float, default=4.0,
+                        help='input image downsampling rate')
+    parser.add_argument('--network_downsampling', type=int, default=64,
+                        help='network downsampling rate')
+    parser.add_argument('--input_size', nargs='+', type=int, required=True,
+                        help='input size')
+    parser.add_argument('--num_workers', type=int, default=8, help='number of workers for data loader')
+    parser.add_argument('--num_pre_workers', type=int, default=8,
+                        help='number of pre-processing workers for data loader')
+    parser.add_argument('--inlier_percentage', type=float, default=0.998,
+                        help='percentage of inliers of SfM point clouds (for pruning extreme outliers)')
+    parser.add_argument('--testing_patient_id', nargs='+', type=int, required=True, help='id of the testing patient')
+    parser.add_argument('--load_intermediate_data', action='store_true',
+                        help='whether or not to load intermediate data')
+    parser.add_argument('--visibility_overlap', type=int, default=20, help='overlap of point visibility information')
+    parser.add_argument('--display_architecture', action='store_true', help='display the network architecture')
+    parser.add_argument('--trained_model_path', type=str, required=True, help='path to the trained model')
+    parser.add_argument('--testing_data_root', type=str, required=True, help='path to the sfm testing data')
+    parser.add_argument('--log_root', type=str, required=True, help='root of logging')
+    parser.add_argument('--feature_length', type=int, default=256, help='output channel dimension of network')
+    parser.add_argument('--filter_growth_rate', type=int, default=10, help='filter growth rate of network')
+    parser.add_argument('--keypoints_per_iter', type=int, default=200, help='number of keypoints per iteration')
+    parser.add_argument('--gpu_id', type=int, default=0, help='id of selected GPU')
+
+--adjacent_range 1 50
+--image_downsampling 4.0
+--network_downsampling 64
+--input_size 256 320
+--num_workers 1
+--num_pre_workers 1
+--inlier_percentage 0.99
+--testing_patient_id 1
+--load_intermediate_data
+--visibility_overlap 20
+--display_architecture
+--log_root "/home/xingtong/gpu121/Train"
+--testing_data_root "/home/xingtong/Research/DenseDescriptorLearning-Pytorch/example_training_data_root"
+--trained_model_path "/home/xingtong/gpu121/Train/feature_descriptor_run_3_10_2_18/checkpoint_model_epoch_32_0.5033751019564365_0.5777206525684425_0.6577131743441852.pt"
+--feature_length 256
+--filter_growth_rate 10
+--keypoints_per_iter 3000
+--gpu_id 0

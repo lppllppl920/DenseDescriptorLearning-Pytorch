@@ -27,7 +27,6 @@ import utils
 
 if __name__ == '__main__':
     multiprocessing.set_start_method('spawn', force=True)
-    cv2.destroyAllWindows()
     parser = argparse.ArgumentParser(
         description='Dense Descriptor Learning -- dense feature matching',
         formatter_class=argparse.ArgumentDefaultsHelpFormatter)
@@ -77,7 +76,7 @@ if __name__ == '__main__':
     num_workers = args.num_workers
     network_downsampling = args.network_downsampling
     load_intermediate_data = args.load_intermediate_data
-    sequence_root = args.sequence_root
+    sequence_root = Path(args.sequence_root)
     trained_model_path = Path(args.trained_model_path)
     data_root = Path(args.data_root)
     max_feature_detection = args.max_feature_detection
