@@ -43,8 +43,6 @@ if __name__ == '__main__':
                                                                      'feature matching')
     parser.add_argument('--sequence_root', type=str, required=True,
                         help='root of the specific video sequence')
-    parser.add_argument('--output_root', type=str, required=True,
-                        help='root of output feature matches in hdf5 format')
     parser.add_argument('--trained_model_path', type=str, required=True, help='path to the trained model')
     parser.add_argument('--feature_length', type=int, default=256, help='output channel dimension of network')
     parser.add_argument('--filter_growth_rate', type=int, default=10, help='filter growth rate of network')
@@ -82,7 +80,6 @@ if __name__ == '__main__':
     sequence_root = args.sequence_root
     trained_model_path = Path(args.trained_model_path)
     data_root = Path(args.data_root)
-    output_root = Path(args.output_root)
     max_feature_detection = args.max_feature_detection
     cross_check_distance = args.cross_check_distance
     gpu_id = args.gpu_id
@@ -98,9 +95,6 @@ if __name__ == '__main__':
     skip_interval = args.skip_interval
     min_inlier_ratio = args.min_inlier_ratio
     hysterisis_factor = args.hysterisis_factor
-
-    if not output_root.exists():
-        output_root.mkdir(parents=True)
 
     precompute_root = data_root / "precompute"
     if not precompute_root.exists():
@@ -131,7 +125,7 @@ if __name__ == '__main__':
     sift_keypoints_list, sift_keypoint_location_list_1D, sift_keypoint_location_list_2D, sift_descriptions_list = \
         utils.extract_keypoints(sift, colors_list, boundary, height, width)
 
-    f_matches = h5py.File(str(output_root / "feature_matches.hdf5"), 'w')
+    f_matches = h5py.File(str(sequence_root / "feature_matches.hdf5"), 'w')
     dataset_matches = f_matches.create_dataset('matches', (0, 4, 1),
                                                maxshape=(None, 4, 1), chunks=(40960, 4, 1),
                                                compression="gzip", compression_opts=9, dtype='int16')
@@ -256,6 +250,10 @@ if __name__ == '__main__':
                         kps_1D_1=sift_keypoint_locations_1D_1,
                         cross_check_distance=cross_check_distance,
                         gpu_id=gpu_id)
+
+                    if x is None:
+                        tq.update(1)
+                        continue
 
                     source_keypoint_indexes, target_keypoint_locations = x
                     source_keypoint_locations = sift_keypoint_locations_2D_1[source_keypoint_indexes,

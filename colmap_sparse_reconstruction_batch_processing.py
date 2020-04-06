@@ -1,5 +1,6 @@
 import os
 from pathlib import Path
+import shutil
 
 if __name__ == "__main__":
     root = Path("D:/Data/WholeModelReconstruction_video")
@@ -21,6 +22,12 @@ if __name__ == "__main__":
 
         if not image_root.exists():
             image_root = sequence_root / "ori_images"
+
+        if not image_root.exists():
+            image_root.mkdir(parents=False)
+            image_path_list = list(sequence_root.glob("0*.jpg"))
+            for image_path in image_path_list:
+                shutil.move(src=str(image_path), dst=str(image_root / image_path.name))
 
         os.system(
             "{} \"{}\" --colmap_exe_path \"{}\" --database_path \"{}\" --image_root \"{}\" --output_root \"{}\"".format(

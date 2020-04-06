@@ -206,27 +206,21 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Dense Descriptor Learning -- COLMAP database building',
                                      formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument("--sequence_root", type=str, required=True, help='root of video sequence')
-    parser.add_argument("--feature_match_path", type=str, required=True, help='path of feature matches in hdf5')
-    parser.add_argument("--output_root", type=str, required=True, help='root of output database file')
     parser.add_argument("--overwrite_database", action="store_true")
 
     args = parser.parse_args()
     sequence_root = Path(args.sequence_root)
-    output_root = Path(args.output_root)
-    feature_match_path = Path(args.feature_match_path)
     overwrite_database = args.overwrite_database
+    feature_match_path = sequence_root / "feature_matches.hdf5"
+    database_path = sequence_root / "database.db"
 
-    if not output_root.exists():
-        output_root.mkdir(parents=True)
-
-    database_path = output_root / "database.db"
     if not overwrite_database:
         if database_path.exists():
             print("ERROR: database exists already")
             exit()
 
     if not feature_match_path.exists():
-        print("ERROR: feature matches hdf5 does not exist")
+        print("ERROR: feature matches hdf5 file does not exist")
         exit()
 
     # Open the database.
@@ -235,7 +229,8 @@ if __name__ == "__main__":
     # For convenience, try creating all the tables upfront.
     db.create_tables()
 
-    image_list = list(sequence_root.glob("0*.jpg"))
+    images_root = sequence_root / "images"
+    image_list = list(images_root.glob("0*.jpg"))
     image_list.sort()
 
     image = cv2.imread(str(image_list[0]))
@@ -245,9 +240,9 @@ if __name__ == "__main__":
     camera_intrinsics_path = sequence_root / "camera_intrinsics_per_view"
     with open(str(camera_intrinsics_path), "r") as f:
         temp = list()
-        for i in range(3):
+        for i in range(4):
             temp.append(f.readline())
-    model, intrinsics = 1, np.array((temp[0], temp[0], temp[1], temp[2]))
+    model, intrinsics = 1, np.array((temp[0], temp[1], temp[2], temp[3]))
     camera_id = db.add_camera(model, width, height, intrinsics)
 
     # Create image ids

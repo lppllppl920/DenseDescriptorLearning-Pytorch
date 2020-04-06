@@ -4,38 +4,66 @@ import numpy as np
 from plyfile import PlyData, PlyElement
 import shutil
 import yaml
+import argparse
 
 if __name__ == "__main__":
-    overwrite_txt_file = False
-    colmap_exe_path = "D:/Data/COLMAP/COLMAP-dev-windows/COLMAP.bat"
-    sequence_root = Path(
-        "D:/Data/WholeModelReconstruction_video/bag_11/_start_000001_end_000901_segment_stride_1000_frame_stride_0002_segment_0000")
-    image_root = sequence_root / "images"
+    parser = argparse.ArgumentParser(
+        description='Dense Descriptor Learning -- converting COLMAP format to SfMDataset format',
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+    parser.add_argument("--colmap_exe_path", type=str, required=True, help='executable path of COLMAP')
+    parser.add_argument("--sequence_root", type=str, required=True, help='root of video sequence')
+    parser.add_argument("--overwrite_output", action="store_true")
+    args = parser.parse_args()
+
+    colmap_exe_path = args.colmap_exe_path
+    sequence_root = Path(args.sequence_root)
+    overwrite_output = args.overwrite_output
+
     database_path = sequence_root / "database.db"
     result_root = sequence_root / "colmap"
     mask_path = sequence_root / "undistorted_mask.bmp"
 
+    if not result_root.exists():
+        print("ERROR: COLMAP sparse reconstruction does not exist")
     result_path_list = list(result_root.glob("*"))
 
-    for result_path in result_path_list:
-        if not overwrite_txt_file:
-            if Path(result_path / "cameras.txt") in list(result_path.glob("*.txt")):
-                print("ERROR: relevant text files exist already")
-            else:
-                os.system(
-                    "{} model_converter --input_path \"{}\" --output_path \"{}\" --output_type TXT".format(
-                        colmap_exe_path, str(result_path), str(result_path)))
+    image_root = sequence_root / "images"
+    image_path_list = list(image_root.glob("0*.jpg"))
 
-        # TODO: Convert the text file to formats that can be readily read by our SfMDataset
+    selected_indexes = list()
+    for image_path in image_path_list:
+        selected_indexes.append(int(image_path.name[:-4]))
+    selected_indexes.sort()
+
+    for result_path in result_path_list:
+        if not overwrite_output:
+            if len(list(result_path.glob("*"))) > 0:
+                print("ERROR: output files already exist in {}".format(str(result_path)))
+                continue
+
+        os.system(
+            "{} model_converter --input_path \"{}\" --output_path \"{}\" --output_type TXT".format(
+                colmap_exe_path, str(result_path), str(result_path)))
+
+        # Convert the text files to formats that can be read by the SfMDataset class
         camera_file_path = result_path / "cameras.txt"
         observation_file_path = result_path / "images.txt"
         point_cloud_file_path = result_path / "points3D.txt"
+
+        # output file paths
         ply_file_path = result_path / "structure.ply"
         view_indexes_per_point_path = result_path / "view_indexes_per_point"
         camera_intrinsics_per_view_path = result_path / "camera_intrinsics_per_view"
         visible_view_indexes_path = result_path / "visible_view_indexes"
+        selected_indexes_path = result_path / "selected_indexes"
         camera_trajectory_path = result_path / "motion.yaml"
+
         shutil.copy(src=str(mask_path), dst=str(result_path / mask_path.name))
+
+        f_selected_indexes = open(str(selected_indexes), "w")
+        for index in selected_indexes:
+            f_selected_indexes.write("{}\n".format(index))
+        f_selected_indexes.close()
 
         # Assuming there is only one PINHOLE camera in SfM estimates
         f_camera = open(str(camera_file_path), "r")
@@ -93,7 +121,7 @@ if __name__ == "__main__":
         el = PlyElement.describe(vertex, 'vertex')
         PlyData([el], text=True).write(str(ply_file_path))
 
-        # TODO: read images.txt
+        # Read images.txt
         f_observation = open(str(observation_file_path), "r")
 
         for i in range(4):

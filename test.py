@@ -30,7 +30,7 @@ if __name__ == '__main__':
     multiprocessing.set_start_method('spawn', force=True)
     cv2.destroyAllWindows()
     parser = argparse.ArgumentParser(
-        description='Dense Descriptor Learning -- Test',
+        description='Dense Descriptor Learning -- pair-wise feature matching evaluation',
         formatter_class=argparse.ArgumentDefaultsHelpFormatter)
 
     parser.add_argument('--adjacent_range', nargs='+', type=int, required=True,
@@ -144,14 +144,13 @@ if __name__ == '__main__':
     mean_accuracy_1 = None
     mean_accuracy_2 = None
     mean_accuracy_3 = None
-
     for patient_id in testing_patient_id:
         data_root = Path(testing_data_root) / "{:d}".format(patient_id)
         sub_folders = list(data_root.glob("*/"))
         sub_folders.sort()
         for folder in sub_folders:
             # Get color image filenames
-            test_filenames = utils.get_file_names_in_sequence(sequence_root=folder)
+            test_filenames = utils.get_file_names_in_sequence(sequence_root=folder / "colmap")
             if len(test_filenames) == 0:
                 print("Sequence {} does not have relevant files".format(str(folder)))
                 continue

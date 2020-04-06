@@ -17,9 +17,43 @@ import random
 import torch
 import torchvision.utils as vutils
 import tqdm
+import matplotlib.pyplot as plt
 
 import dataset
 import models
+
+
+def write_point_cloud(path, point_cloud):
+    point_clouds_list = []
+    for i in range(point_cloud.shape[0]):
+        point_clouds_list.append((point_cloud[i, 0], point_cloud[i, 1], point_cloud[i, 2], point_cloud[i, 3],
+                                  point_cloud[i, 4], point_cloud[i, 5]))
+
+    vertex = np.array(point_clouds_list,
+                      dtype=[('x', 'f4'), ('y', 'f4'), ('z', 'f4'), ('red', 'u1'), ('green', 'u1'), ('blue', 'u1')])
+    el = PlyElement.describe(vertex, 'vertex')
+    PlyData([el], text=True).write(path)
+    return
+
+
+def scatter_points_to_image(image, visible_locations_x, visible_locations_y, invisible_locations_x,
+                            invisible_locations_y, only_visible, point_size):
+    fig = plt.figure()
+    fig.set_dpi(100)
+    fig.set_size_inches(image.shape[1] / 100, image.shape[0] / 100)
+    ax = plt.Axes(fig, [0., 0., 1., 1.])
+    ax.set_axis_off()
+    fig.add_axes(ax)
+    plt.imshow(image, zorder=1)
+    plt.scatter(x=visible_locations_x, y=visible_locations_y, s=point_size, alpha=0.5, c='b', zorder=2)
+    if not only_visible:
+        plt.scatter(x=invisible_locations_x, y=invisible_locations_y, s=point_size, alpha=0.5, c='y', zorder=3)
+    fig.canvas.draw()
+
+    data = np.frombuffer(fig.canvas.tostring_rgb(), dtype=np.uint8)
+    data = data.reshape(fig.canvas.get_width_height()[::-1] + (3,))
+    plt.close()
+    return data
 
 
 def get_color_file_names_by_bag(root, training_patient_id, validation_patient_id, testing_patient_id):
@@ -35,11 +69,11 @@ def get_color_file_names_by_bag(root, training_patient_id, validation_patient_id
         testing_patient_id = [testing_patient_id]
 
     for id in training_patient_id:
-        training_image_list += list(root.glob('{:d}/*/0*.jpg'.format(id)))
+        training_image_list += list(root.glob('{:d}/*/images/0*.jpg'.format(id)))
     for id in testing_patient_id:
-        testing_image_list += list(root.glob('{:d}/*/0*.jpg'.format(id)))
+        testing_image_list += list(root.glob('{:d}/*/images/0*.jpg'.format(id)))
     for id in validation_patient_id:
-        validation_image_list += list(root.glob('{:d}/*/0*.jpg'.format(id)))
+        validation_image_list += list(root.glob('{:d}/*/images/0*.jpg'.format(id)))
 
     training_image_list.sort()
     testing_image_list.sort()
@@ -128,12 +162,14 @@ def read_camera_intrinsic_per_view(prefix_seq):
             # Focal length
             if param_count == 0:
                 temp_camera_intrincis[0][0] = float(line)
-                temp_camera_intrincis[1][1] = float(line)
                 param_count += 1
             elif param_count == 1:
-                temp_camera_intrincis[0][2] = float(line)
+                temp_camera_intrincis[1][1] = float(line)
                 param_count += 1
             elif param_count == 2:
+                temp_camera_intrincis[0][2] = float(line)
+                param_count += 1
+            elif param_count == 3:
                 temp_camera_intrincis[1][2] = float(line)
                 temp_camera_intrincis[2][2] = 1.0
                 camera_intrinsics.append(temp_camera_intrincis)
@@ -209,8 +245,6 @@ def get_extrinsic_matrix_and_projection_matrix(poses, intrinsic_matrix, visible_
         rigid_transform[2][3] = poses["poses[" + str(i) + "]"]['position']['z']
 
         transform = np.asmatrix(rigid_transform)
-        transform = np.linalg.inv(transform)
-
         extrinsic_matrices.append(transform)
         projection_matrices.append(np.dot(intrinsic_matrix, transform))
 
@@ -950,7 +984,7 @@ def gather_feature_matching_data(feature_descriptor_model_path, sub_folder, data
         raise OSError
     del state
 
-    video_frame_filenames = get_all_color_image_names_in_sequence(sub_folder)
+    video_frame_filenames = get_all_color_image_names_in_sequence(sub_folder / "images")
     print("Gathering feature matching data for {}".format(sub_folder))
     folder_list = get_all_subfolder_names(data_root, id_range)
     video_dataset = dataset.SfMDataset(image_file_names=video_frame_filenames,
@@ -1121,7 +1155,7 @@ def extract_keypoints(descriptor, colors_list, boundary, height, width):
 def get_all_subfolder_names(root, id_range):
     folder_list = []
     for i in id_range:
-        folder_list += list(root.glob('{}/_start*/'.format(i)))
+        folder_list += list(root.glob('{}/*/'.format(i)))
     folder_list.sort()
     return folder_list
 
