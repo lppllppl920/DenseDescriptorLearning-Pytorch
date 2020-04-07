@@ -12,7 +12,6 @@ import argparse
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Dense Descriptor Learning -- point cloud - video overlay generation',
                                      formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-    parser.add_argument("--colmap_exe_path", type=str, required=True)
     parser.add_argument("--sequence_root", type=str, required=True, help='root of video sequence')
     parser.add_argument("--display_image", action="store_true")
     parser.add_argument("--display_visible_only", action="store_true")

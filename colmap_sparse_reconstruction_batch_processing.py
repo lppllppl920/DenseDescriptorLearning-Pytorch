@@ -21,20 +21,22 @@ if __name__ == "__main__":
             continue
 
         if not image_root.exists():
-            image_root = sequence_root / "ori_images"
-
-        if not image_root.exists():
-            image_root.mkdir(parents=False)
-            image_path_list = list(sequence_root.glob("0*.jpg"))
-            for image_path in image_path_list:
-                shutil.move(src=str(image_path), dst=str(image_root / image_path.name))
+            ori_image_root = sequence_root / "ori_images"
+            if not ori_image_root.exists():
+                image_root.mkdir(parents=False)
+                image_path_list = list(sequence_root.glob("0*.jpg"))
+                for image_path in image_path_list:
+                    shutil.move(src=str(image_path), dst=str(image_root / image_path.name))
+            else:
+                image_root.mkdir(parents=False)
+                image_path_list = list(ori_image_root.glob("0*.jpg"))
+                for image_path in image_path_list:
+                    shutil.move(src=str(image_path), dst=str(image_root / image_path.name))
 
         os.system(
-            "{} \"{}\" --colmap_exe_path \"{}\" --database_path \"{}\" --image_root \"{}\" --output_root \"{}\"".format(
+            "{} \"{}\" --colmap_exe_path \"{}\" --sequence_root \"{}\"".format(
                 python_path,
                 python_script,
                 colmap_exe_path,
-                str(database_path),
-                str(image_root),
-                str(output_root)
+                str(sequence_root)
             ))
