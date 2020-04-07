@@ -9,7 +9,6 @@ You should have received a copy of the GNU GENERAL PUBLIC LICENSE Version 3 lice
 this file. If not, please write to: xliu89@jh.edu or unberath@jhu.edu
 '''
 import tqdm
-import cv2
 import numpy as np
 from pathlib import Path
 import torchsummary
@@ -28,15 +27,14 @@ import dataset
 
 if __name__ == '__main__':
     multiprocessing.set_start_method('spawn', force=True)
-    cv2.destroyAllWindows()
     parser = argparse.ArgumentParser(
-        description='Dense Descriptor Learning -- Test',
+        description='Dense Descriptor Learning -- pair-wise feature matching evaluation',
         formatter_class=argparse.ArgumentDefaultsHelpFormatter)
 
     parser.add_argument('--adjacent_range', nargs='+', type=int, required=True,
                         help='interval range for a pair of video frames')
     parser.add_argument('--image_downsampling', type=float, default=4.0,
-                        help='input image downsampling rate for training acceleration')
+                        help='input image downsampling rate')
     parser.add_argument('--network_downsampling', type=int, default=64,
                         help='network downsampling rate')
     parser.add_argument('--input_size', nargs='+', type=int, required=True,
@@ -52,10 +50,10 @@ if __name__ == '__main__':
     parser.add_argument('--visibility_overlap', type=int, default=20, help='overlap of point visibility information')
     parser.add_argument('--display_architecture', action='store_true', help='display the network architecture')
     parser.add_argument('--trained_model_path', type=str, required=True, help='path to the trained model')
-    parser.add_argument('--testing_data_root', type=str, required=True, help='path to the sfm training data')
+    parser.add_argument('--testing_data_root', type=str, required=True, help='path to the sfm testing data')
     parser.add_argument('--log_root', type=str, required=True, help='root of logging')
-    parser.add_argument('--feature_length', type=int, default=128, help='output channel dimension of network')
-    parser.add_argument('--filter_growth_rate', type=int, default=12, help='filter growth rate of network')
+    parser.add_argument('--feature_length', type=int, default=256, help='output channel dimension of network')
+    parser.add_argument('--filter_growth_rate', type=int, default=10, help='filter growth rate of network')
     parser.add_argument('--keypoints_per_iter', type=int, default=200, help='number of keypoints per iteration')
     parser.add_argument('--gpu_id', type=int, default=0, help='id of selected GPU')
     args = parser.parse_args()
@@ -144,7 +142,6 @@ if __name__ == '__main__':
     mean_accuracy_1 = None
     mean_accuracy_2 = None
     mean_accuracy_3 = None
-
     for patient_id in testing_patient_id:
         data_root = Path(testing_data_root) / "{:d}".format(patient_id)
         sub_folders = list(data_root.glob("*/"))

@@ -9,6 +9,10 @@ You should have received a copy of the GNU GENERAL PUBLIC LICENSE Version 3 lice
 this file. If not, please write to: xliu89@jh.edu or unberath@jhu.edu
 '''
 
+import sys
+
+if '/opt/ros/kinetic/lib/python2.7/dist-packages' in sys.path:
+    sys.path.remove('/opt/ros/kinetic/lib/python2.7/dist-packages')
 import argparse
 import multiprocessing
 import cv2
@@ -31,7 +35,6 @@ import losses
 
 if __name__ == '__main__':
     multiprocessing.set_start_method('spawn', force=True)
-    cv2.destroyAllWindows()
     parser = argparse.ArgumentParser(
         description='Dense Descriptor Learning -- Train',
         formatter_class=argparse.ArgumentDefaultsHelpFormatter)
@@ -74,8 +77,8 @@ if __name__ == '__main__':
     parser.add_argument('--sampling_size', type=int, default=10,
                         help='number of positive sample pairs per iteration')
     parser.add_argument('--log_root', type=str, required=True, help='root of logging')
-    parser.add_argument('--feature_length', type=int, default=128, help='output channel dimension of network')
-    parser.add_argument('--filter_growth_rate', type=int, default=12, help='filter growth rate of network')
+    parser.add_argument('--feature_length', type=int, default=256, help='output channel dimension of network')
+    parser.add_argument('--filter_growth_rate', type=int, default=10, help='filter growth rate of network')
     parser.add_argument('--matching_scale', type=float, default=20.0, help='scale for soft thresholding')
     parser.add_argument('--matching_threshold', type=float, default=0.9, help='threshold for soft thresholding')
     parser.add_argument('--rr_weight', type=float, default=1.0, help='weight of relative response loss')

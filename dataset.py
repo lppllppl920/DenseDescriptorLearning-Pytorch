@@ -17,7 +17,6 @@ from torch.utils.data import Dataset
 from albumentations.pytorch.functional import img_to_tensor
 import albumentations as albu
 import torch
-
 import utils
 
 
@@ -28,17 +27,20 @@ def pre_processing_data(process_id, folder_list, downsampling, network_downsampl
                         queue_visible_view_indexes,
                         queue_extrinsics, queue_projection, queue_crop_positions, queue_estimated_scale):
     for folder in folder_list:
+        colmap_result_folder = folder / "colmap" / "0"
+        images_folder = folder / "images"
+        # For now, we only use the results in the subfolder named "0" produced by COLMAP
         # We use folder path as the key for dictionaries
         # Read undistorted mask image
         folder_str = str(folder)
         # Read visible view indexes
-        visible_view_indexes = utils.read_visible_view_indexes(folder)
+        visible_view_indexes = utils.read_visible_view_indexes(colmap_result_folder)
         if len(visible_view_indexes) == 0:
             print("Sequence {} does not have relevant files".format(folder_str))
             continue
         queue_visible_view_indexes.put([folder_str, visible_view_indexes])
 
-        undistorted_mask_boundary = cv2.imread(str(folder / "undistorted_mask.bmp"), cv2.IMREAD_GRAYSCALE)
+        undistorted_mask_boundary = cv2.imread(str(colmap_result_folder / "undistorted_mask.bmp"), cv2.IMREAD_GRAYSCALE)
         # Downsample and crop the undistorted mask image
         cropped_downsampled_undistorted_mask_boundary, start_h, end_h, start_w, end_w = \
             utils.downsample_and_crop_mask(undistorted_mask_boundary, downsampling_factor=downsampling,
@@ -47,10 +49,10 @@ def pre_processing_data(process_id, folder_list, downsampling, network_downsampl
         queue_mask_boundary.put([folder_str, cropped_downsampled_undistorted_mask_boundary])
         queue_crop_positions.put([folder_str, [start_h, end_h, start_w, end_w]])
         # Read selected image indexes
-        selected_indexes = utils.read_selected_indexes(folder)
+        selected_indexes = utils.read_selected_indexes(colmap_result_folder)
         queue_selected_indexes.put([folder_str, selected_indexes])
         # Read undistorted camera intrinsics
-        undistorted_camera_intrinsic_per_view = utils.read_camera_intrinsic_per_view(folder)
+        undistorted_camera_intrinsic_per_view = utils.read_camera_intrinsic_per_view(colmap_result_folder)
         # Downsample and crop the undistorted camera intrinsics
         # Assuming that camera intrinsics within one video sequence remains the same
         cropped_downsampled_undistorted_intrinsic_matrix = utils.modify_camera_intrinsic_matrix(
@@ -58,10 +60,10 @@ def pre_processing_data(process_id, folder_list, downsampling, network_downsampl
             start_w=start_w, downsampling_factor=downsampling)
         queue_intrinsic_matrix.put([folder_str, cropped_downsampled_undistorted_intrinsic_matrix])
         # Read sparse point cloud from SfM
-        point_cloud = utils.read_point_cloud(str(folder / "structure.ply"))
+        point_cloud = utils.read_point_cloud(str(colmap_result_folder / "structure.ply"))
         queue_point_cloud.put([folder_str, point_cloud])
         # Read visible view indexes per point
-        view_indexes_per_point = utils.read_view_indexes_per_point(folder, visible_view_indexes=
+        view_indexes_per_point = utils.read_view_indexes_per_point(colmap_result_folder, visible_view_indexes=
         visible_view_indexes, point_cloud_count=len(point_cloud))
         # Update view_indexes_per_point with neighborhood frames to increase point correspondences and
         # avoid as much occlusion problem as possible
@@ -69,7 +71,7 @@ def pre_processing_data(process_id, folder_list, downsampling, network_downsampl
                                                                                   visible_interval)
         queue_view_indexes_per_point.put([folder_str, view_indexes_per_point])
         # Read pose data for all visible views
-        poses = utils.read_pose_data(folder)
+        poses = utils.read_pose_data(colmap_result_folder)
         # Calculate extrinsic and projection matrices
         visible_extrinsic_matrices, visible_cropped_downsampled_undistorted_projection_matrices = \
             utils.get_extrinsic_matrix_and_projection_matrix(poses,
@@ -81,7 +83,8 @@ def pre_processing_data(process_id, folder_list, downsampling, network_downsampl
         # Get approximate data global scale to reduce training data imbalance
         global_scale = utils.global_scale_estimation(visible_extrinsic_matrices, point_cloud)
         queue_estimated_scale.put([folder_str, global_scale])
-        visible_cropped_downsampled_imgs = utils.get_color_imgs(folder, visible_view_indexes=visible_view_indexes,
+        visible_cropped_downsampled_imgs = utils.get_color_imgs(images_folder,
+                                                                visible_view_indexes=visible_view_indexes,
                                                                 start_h=start_h, start_w=start_w,
                                                                 end_h=end_h, end_w=end_w,
                                                                 downsampling_factor=downsampling)
@@ -113,10 +116,11 @@ def find_common_valid_size(folder_list, image_downsampling, network_downsampling
 
 
 class SfMDataset(Dataset):
-    def __init__(self, image_file_names, folder_list, adjacent_range,
-                 image_downsampling, network_downsampling, inlier_percentage, load_intermediate_data,
-                 intermediate_data_root, phase, visible_interval, pre_workers, num_iter=None, sampling_size=10,
-                 heatmap_sigma=5.0):
+    def __init__(self, image_file_names, folder_list,
+                 image_downsampling, network_downsampling, load_intermediate_data,
+                 intermediate_data_root, phase, visible_interval=30, pre_workers=12, inlier_percentage=0.998,
+                 adjacent_range=(1, 1), num_iter=None,
+                 sampling_size=10, heatmap_sigma=5.0):
 
         self.image_file_names = sorted(image_file_names)
         self.folder_list = folder_list
@@ -146,8 +150,7 @@ class SfMDataset(Dataset):
         self.estimated_scale_per_seq = {}
 
         precompute_path = intermediate_data_root / (
-            "precompute_{}_{}_{}.pkl".format(self.image_downsampling, self.network_downsampling,
-                                             self.inlier_percentage))
+            "precompute_{}_{}.pkl".format(self.image_downsampling, self.network_downsampling))
 
         # Save all intermediate results to hard disk for quick access later on
         if not load_intermediate_data or not precompute_path.exists():
@@ -328,7 +331,7 @@ class SfMDataset(Dataset):
                 return max(self.num_iter, len(self.image_file_names))
             else:
                 return len(self.image_file_names)
-        elif self.phase == "test":
+        else:
             return len(self.image_file_names)
 
     def __getitem__(self, idx):
@@ -336,7 +339,8 @@ class SfMDataset(Dataset):
             while True:
                 img_file_name = self.image_file_names[idx % len(self.image_file_names)]
                 # Retrieve the folder path
-                folder = img_file_name.parent
+                folder = img_file_name.parents[1]
+                images_folder = folder / "images"
                 folder_str = str(folder)
                 # Randomly pick one adjacent frame
                 # We assume the filename has 8 logits followed by ".jpg"
@@ -357,7 +361,8 @@ class SfMDataset(Dataset):
                 pair_projection_matrices = [self.projection_per_seq[folder_str][pos],
                                             self.projection_per_seq[folder_str][pos + increment]]
                 # Read pair images with downsampling and cropping
-                pair_imgs = utils.get_pair_color_imgs(prefix_seq=folder, pair_indexes=pair_indexes, start_h=start_h,
+                pair_imgs = utils.get_pair_color_imgs(prefix_seq=images_folder, pair_indexes=pair_indexes,
+                                                      start_h=start_h,
                                                       start_w=start_w,
                                                       end_h=end_h, end_w=end_w,
                                                       downsampling_factor=self.image_downsampling)
@@ -451,7 +456,7 @@ class SfMDataset(Dataset):
             # images need to all belong to the same sequence and also all have the estimated camera poses
             # image file names should be already sorted
             img_file_name = self.image_file_names[idx]
-            folder = img_file_name.parent
+            folder = img_file_name.parents[1]
             folder_str = str(folder)
             start_h, end_h, start_w, end_w = self.crop_positions_per_seq[folder_str]
 
@@ -491,3 +496,27 @@ class SfMDataset(Dataset):
             training_mask_boundary[training_mask_boundary > 0.9] = 1.0
             training_mask_boundary[training_mask_boundary <= 0.9] = 0.0
             return [torch.cat(img_list, dim=0), feature_matches_list, img_to_tensor(training_mask_boundary)]
+
+        elif self.phase == 'image_loading':
+            img_file_name = self.image_file_names[idx]
+            # Retrieve the folder path
+            folder_str = str(img_file_name.parents[1])
+
+            start_h, end_h, start_w, end_w = self.crop_positions_per_seq[folder_str]
+            color_img = utils.read_color_img(img_file_name, start_h, end_h, start_w, end_w,
+                                             self.image_downsampling)
+            training_color_img_1 = color_img
+            height, width, _ = training_color_img_1.shape
+
+            training_mask_boundary = utils.type_float_and_reshape(
+                self.mask_boundary_per_seq[folder_str].astype(np.float32) / 255.0,
+                (height, width, 1))
+            training_mask_boundary[training_mask_boundary > 0.9] = 1.0
+            training_mask_boundary[training_mask_boundary <= 0.9] = 0.0
+
+            # Normalize
+            training_color_img_1 = self.normalize(image=training_color_img_1)['image']
+
+            return [img_to_tensor(training_color_img_1),
+                    img_to_tensor(training_mask_boundary),
+                    str(img_file_name), folder_str, start_h, start_w]
