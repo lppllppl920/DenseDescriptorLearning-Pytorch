@@ -1,7 +1,14 @@
-import sys
+'''
+Author: Xingtong Liu, Yiping Zheng, Benjamin Killeen, Masaru Ishii, Gregory D. Hager, Russell H. Taylor, and Mathias Unberath
 
-if '/opt/ros/kinetic/lib/python2.7/dist-packages' in sys.path:
-    sys.path.remove('/opt/ros/kinetic/lib/python2.7/dist-packages')
+Copyright (C) 2020 Johns Hopkins University - All Rights Reserved
+You may use, distribute and modify this code under the
+terms of the GNU GENERAL PUBLIC LICENSE Version 3 license for non-commercial usage.
+
+You should have received a copy of the GNU GENERAL PUBLIC LICENSE Version 3 license with
+this file. If not, please write to: xliu89@jh.edu or unberath@jhu.edu
+'''
+
 import argparse
 from pathlib import Path
 import sys
@@ -12,7 +19,6 @@ import h5py
 import tqdm
 from skimage.measure import ransac
 from skimage.transform import FundamentalMatrixTransform
-import shutil
 
 IS_PYTHON3 = sys.version_info[0] >= 3
 

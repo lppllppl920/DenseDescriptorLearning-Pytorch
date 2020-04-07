@@ -8,20 +8,20 @@ terms of the GNU GENERAL PUBLIC LICENSE Version 3 license for non-commercial usa
 You should have received a copy of the GNU GENERAL PUBLIC LICENSE Version 3 license with
 this file. If not, please write to: xliu89@jh.edu or unberath@jhu.edu
 '''
-import sys
 
-if '/opt/ros/kinetic/lib/python2.7/dist-packages' in sys.path:
-    sys.path.remove('/opt/ros/kinetic/lib/python2.7/dist-packages')
+# Uncomment these three lines if OPENCV error related to ROS happens
+# import sys
+# if '/opt/ros/kinetic/lib/python2.7/dist-packages' in sys.path:
+#     sys.path.remove('/opt/ros/kinetic/lib/python2.7/dist-packages')
 import cv2
 import numpy as np
-from plyfile import PlyData
+from plyfile import PlyData, PlyElement
 import yaml
 import random
 import torch
 import torchvision.utils as vutils
 import tqdm
 import matplotlib.pyplot as plt
-from pathlib import Path
 
 import dataset
 import models
