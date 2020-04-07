@@ -9,7 +9,6 @@ You should have received a copy of the GNU GENERAL PUBLIC LICENSE Version 3 lice
 this file. If not, please write to: xliu89@jh.edu or unberath@jhu.edu
 '''
 import tqdm
-import cv2
 import numpy as np
 from pathlib import Path
 import torchsummary
@@ -28,7 +27,6 @@ import dataset
 
 if __name__ == '__main__':
     multiprocessing.set_start_method('spawn', force=True)
-    cv2.destroyAllWindows()
     parser = argparse.ArgumentParser(
         description='Dense Descriptor Learning -- pair-wise feature matching evaluation',
         formatter_class=argparse.ArgumentDefaultsHelpFormatter)
@@ -150,7 +148,7 @@ if __name__ == '__main__':
         sub_folders.sort()
         for folder in sub_folders:
             # Get color image filenames
-            test_filenames = utils.get_file_names_in_sequence(sequence_root=folder / "colmap")
+            test_filenames = utils.get_file_names_in_sequence(sequence_root=folder)
             if len(test_filenames) == 0:
                 print("Sequence {} does not have relevant files".format(str(folder)))
                 continue

@@ -9,6 +9,10 @@ You should have received a copy of the GNU GENERAL PUBLIC LICENSE Version 3 lice
 this file. If not, please write to: xliu89@jh.edu or unberath@jhu.edu
 '''
 
+import sys
+
+if '/opt/ros/kinetic/lib/python2.7/dist-packages' in sys.path:
+    sys.path.remove('/opt/ros/kinetic/lib/python2.7/dist-packages')
 import argparse
 import multiprocessing
 import cv2
@@ -31,7 +35,6 @@ import losses
 
 if __name__ == '__main__':
     multiprocessing.set_start_method('spawn', force=True)
-    cv2.destroyAllWindows()
     parser = argparse.ArgumentParser(
         description='Dense Descriptor Learning -- Train',
         formatter_class=argparse.ArgumentDefaultsHelpFormatter)
