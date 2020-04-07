@@ -8,7 +8,10 @@ terms of the GNU GENERAL PUBLIC LICENSE Version 3 license for non-commercial usa
 You should have received a copy of the GNU GENERAL PUBLIC LICENSE Version 3 license with
 this file. If not, please write to: xliu89@jh.edu or unberath@jhu.edu
 '''
+import sys
 
+if '/opt/ros/kinetic/lib/python2.7/dist-packages' in sys.path:
+    sys.path.remove('/opt/ros/kinetic/lib/python2.7/dist-packages')
 import cv2
 import numpy as np
 from plyfile import PlyData
@@ -16,6 +19,45 @@ import yaml
 import random
 import torch
 import torchvision.utils as vutils
+import tqdm
+import matplotlib.pyplot as plt
+from pathlib import Path
+
+import dataset
+import models
+
+
+def write_point_cloud(path, point_cloud):
+    point_clouds_list = []
+    for i in range(point_cloud.shape[0]):
+        point_clouds_list.append((point_cloud[i, 0], point_cloud[i, 1], point_cloud[i, 2], point_cloud[i, 3],
+                                  point_cloud[i, 4], point_cloud[i, 5]))
+
+    vertex = np.array(point_clouds_list,
+                      dtype=[('x', 'f4'), ('y', 'f4'), ('z', 'f4'), ('red', 'u1'), ('green', 'u1'), ('blue', 'u1')])
+    el = PlyElement.describe(vertex, 'vertex')
+    PlyData([el], text=True).write(path)
+    return
+
+
+def scatter_points_to_image(image, visible_locations_x, visible_locations_y, invisible_locations_x,
+                            invisible_locations_y, only_visible, point_size):
+    fig = plt.figure()
+    fig.set_dpi(100)
+    fig.set_size_inches(image.shape[1] / 100, image.shape[0] / 100)
+    ax = plt.Axes(fig, [0., 0., 1., 1.])
+    ax.set_axis_off()
+    fig.add_axes(ax)
+    plt.imshow(image, zorder=1)
+    plt.scatter(x=visible_locations_x, y=visible_locations_y, s=point_size, alpha=0.5, c='b', zorder=2)
+    if not only_visible:
+        plt.scatter(x=invisible_locations_x, y=invisible_locations_y, s=point_size, alpha=0.5, c='y', zorder=3)
+    fig.canvas.draw()
+
+    data = np.frombuffer(fig.canvas.tostring_rgb(), dtype=np.uint8)
+    data = data.reshape(fig.canvas.get_width_height()[::-1] + (3,))
+    plt.close()
+    return data
 
 
 def get_color_file_names_by_bag(root, training_patient_id, validation_patient_id, testing_patient_id):
@@ -31,11 +73,11 @@ def get_color_file_names_by_bag(root, training_patient_id, validation_patient_id
         testing_patient_id = [testing_patient_id]
 
     for id in training_patient_id:
-        training_image_list += list(root.glob('{:d}/*/0*.jpg'.format(id)))
+        training_image_list += list(root.glob('{:d}/*/images/0*.jpg'.format(id)))
     for id in testing_patient_id:
-        testing_image_list += list(root.glob('{:d}/*/0*.jpg'.format(id)))
+        testing_image_list += list(root.glob('{:d}/*/images/0*.jpg'.format(id)))
     for id in validation_patient_id:
-        validation_image_list += list(root.glob('{:d}/*/0*.jpg'.format(id)))
+        validation_image_list += list(root.glob('{:d}/*/images/0*.jpg'.format(id)))
 
     training_image_list.sort()
     testing_image_list.sort()
@@ -124,12 +166,14 @@ def read_camera_intrinsic_per_view(prefix_seq):
             # Focal length
             if param_count == 0:
                 temp_camera_intrincis[0][0] = float(line)
-                temp_camera_intrincis[1][1] = float(line)
                 param_count += 1
             elif param_count == 1:
-                temp_camera_intrincis[0][2] = float(line)
+                temp_camera_intrincis[1][1] = float(line)
                 param_count += 1
             elif param_count == 2:
+                temp_camera_intrincis[0][2] = float(line)
+                param_count += 1
+            elif param_count == 3:
                 temp_camera_intrincis[1][2] = float(line)
                 temp_camera_intrincis[2][2] = 1.0
                 camera_intrinsics.append(temp_camera_intrincis)
@@ -152,11 +196,7 @@ def read_point_cloud(path):
     plydata = PlyData.read(path)
     for n in range(plydata['vertex'].count):
         temp = list(plydata['vertex'][n])
-        temp[0] = temp[0]
-        temp[1] = temp[1]
-        temp[2] = temp[2]
-        temp.append(1.0)
-        lists_3D_points.append(temp)
+        lists_3D_points.append([temp[0], temp[1], temp[2], 1.0])
     return lists_3D_points
 
 
@@ -194,7 +234,6 @@ def read_pose_data(prefix_seq):
 def get_extrinsic_matrix_and_projection_matrix(poses, intrinsic_matrix, visible_view_count):
     projection_matrices = []
     extrinsic_matrices = []
-
     for i in range(visible_view_count):
         rigid_transform = quaternion_matrix(
             [poses["poses[" + str(i) + "]"]['orientation']['w'], poses["poses[" + str(i) + "]"]['orientation']['x'],
@@ -205,8 +244,6 @@ def get_extrinsic_matrix_and_projection_matrix(poses, intrinsic_matrix, visible_
         rigid_transform[2][3] = poses["poses[" + str(i) + "]"]['position']['z']
 
         transform = np.asmatrix(rigid_transform)
-        transform = np.linalg.inv(transform)
-
         extrinsic_matrices.append(transform)
         projection_matrices.append(np.dot(intrinsic_matrix, transform))
 
@@ -925,15 +962,220 @@ def feature_matching_single(color_1, color_2, feature_map_1, feature_map_2, kps_
         return display_matches_ai, display_matches_craft
 
 
+def gather_feature_matching_data(feature_descriptor_model_path, sub_folder, data_root, image_downsampling,
+                                 network_downsampling, load_intermediate_data, precompute_root,
+                                 batch_size, id_range, filter_growth_rate, feature_length, gpu_id):
+    feature_descriptor_model = models.FCDenseNet(
+        in_channels=3, down_blocks=(3, 3, 3, 3, 3),
+        up_blocks=(3, 3, 3, 3, 3), bottleneck_layers=4,
+        growth_rate=filter_growth_rate, out_chans_first_conv=16, feature_length=feature_length)
+
+    # Multi-GPU running
+    feature_descriptor_model = torch.nn.DataParallel(feature_descriptor_model, device_ids=[gpu_id])
+    feature_descriptor_model.eval()
+
+    if feature_descriptor_model_path.exists():
+        print("Loading {:s} ...".format(str(feature_descriptor_model_path)))
+        state = torch.load(str(feature_descriptor_model_path), map_location='cuda:{}'.format(gpu_id))
+        feature_descriptor_model.load_state_dict(state["model"])
+    else:
+        print("No pre-trained model detected")
+        raise OSError
+    del state
+
+    video_frame_filenames = get_all_color_image_names_in_sequence(sub_folder)
+    print("Gathering feature matching data for {}".format(str(sub_folder)))
+    folder_list = get_all_subfolder_names(data_root, id_range)
+    video_dataset = dataset.SfMDataset(image_file_names=video_frame_filenames,
+                                       folder_list=folder_list,
+                                       image_downsampling=image_downsampling,
+                                       network_downsampling=network_downsampling,
+                                       load_intermediate_data=load_intermediate_data,
+                                       intermediate_data_root=precompute_root,
+                                       phase="image_loading")
+    video_loader = torch.utils.data.DataLoader(dataset=video_dataset, batch_size=batch_size,
+                                               shuffle=False,
+                                               num_workers=batch_size)
+
+    colors_list = []
+    feature_maps_list = []
+    with torch.no_grad():
+        # Update progress bar
+        tq = tqdm.tqdm(total=len(video_loader) * batch_size)
+        for batch, (colors_1, boundaries, image_names,
+                    folders, starts_h, starts_w) in enumerate(video_loader):
+            tq.update(batch_size)
+            colors_1 = colors_1.cuda(gpu_id)
+            if batch == 0:
+                boundary = boundaries[0].data.numpy()
+                start_h = starts_h[0].item()
+                start_w = starts_w[0].item()
+
+            feature_maps_1 = feature_descriptor_model(colors_1)
+            for idx in range(colors_1.shape[0]):
+                colors_list.append(colors_1[idx].data.cpu().numpy())
+                feature_maps_list.append(feature_maps_1[idx].data.cpu())
+    tq.close()
+    del feature_descriptor_model
+    return colors_list, boundary, feature_maps_list, start_h, start_w
+
+
+def feature_matching_single_generation(feature_map_1, feature_map_2,
+                                       kps_1D_1, cross_check_distance, gpu_id):
+    with torch.no_grad():
+        # Feature map C x H x W
+        feature_length, height, width = feature_map_1.shape
+
+        # Extend 1D locations to B x C x Sampling_size
+        keypoint_number = len(kps_1D_1)
+        source_feature_1d_locations = torch.from_numpy(kps_1D_1).long().cuda(gpu_id).view(
+            1, 1,
+            keypoint_number).expand(
+            -1, feature_length, -1)
+
+        # Sampled rough locator feature vectors
+        sampled_feature_vectors = torch.gather(
+            feature_map_1.view(1, feature_length, height * width), 2,
+            source_feature_1d_locations.long())
+        sampled_feature_vectors = sampled_feature_vectors.view(1, feature_length,
+                                                               keypoint_number,
+                                                               1,
+                                                               1).permute(0, 2, 1, 3,
+                                                                          4).view(1,
+                                                                                  keypoint_number,
+                                                                                  feature_length,
+                                                                                  1, 1)
+
+        # 1 x Sampling_size x H x W
+        filter_response_map = torch.nn.functional.conv2d(
+            input=feature_map_2.view(1, feature_length, height, width),
+            weight=sampled_feature_vectors.view(keypoint_number,
+                                                feature_length,
+                                                1, 1), padding=0)
+
+        max_reponses, max_indexes = torch.max(filter_response_map.view(keypoint_number, -1), dim=1,
+                                              keepdim=False)
+        del sampled_feature_vectors, filter_response_map, source_feature_1d_locations
+        # query is 1 and train is 2 here
+        detected_target_1d_locations = max_indexes.view(-1)
+        selected_max_responses = max_reponses.view(-1)
+        # Do cross check
+        feature_1d_locations_2 = detected_target_1d_locations.long().view(
+            1, 1, -1).expand(-1, feature_length, -1)
+
+        # Sampled rough locator feature vectors
+        sampled_feature_vectors_2 = torch.gather(
+            feature_map_2.view(1, feature_length, height * width), 2,
+            feature_1d_locations_2.long())
+        sampled_feature_vectors_2 = sampled_feature_vectors_2.view(1, feature_length,
+                                                                   keypoint_number,
+                                                                   1,
+                                                                   1).permute(0, 2, 1, 3,
+                                                                              4).view(1,
+                                                                                      keypoint_number,
+                                                                                      feature_length,
+                                                                                      1, 1)
+
+        # 1 x Sampling_size x H x W
+        source_filter_response_map = torch.nn.functional.conv2d(
+            input=feature_map_1.view(1, feature_length, height, width),
+            weight=sampled_feature_vectors_2.view(keypoint_number,
+                                                  feature_length,
+                                                  1, 1), padding=0)
+
+        max_reponses_2, max_indexes_2 = torch.max(source_filter_response_map.view(keypoint_number, -1),
+                                                  dim=1,
+                                                  keepdim=False)
+        del sampled_feature_vectors_2, source_filter_response_map, feature_1d_locations_2
+
+        keypoint_1d_locations_1 = torch.from_numpy(np.asarray(kps_1D_1)).float().cuda(gpu_id).view(
+            keypoint_number, 1)
+        keypoint_2d_locations_1 = torch.cat(
+            [torch.fmod(keypoint_1d_locations_1, width),
+             torch.floor(keypoint_1d_locations_1 / width)],
+            dim=1).view(keypoint_number, 2).float()
+
+        detected_source_keypoint_1d_locations = max_indexes_2.float().view(keypoint_number, 1)
+        detected_source_keypoint_2d_locations = torch.cat(
+            [torch.fmod(detected_source_keypoint_1d_locations, width),
+             torch.floor(detected_source_keypoint_1d_locations / width)],
+            dim=1).view(keypoint_number, 2).float()
+
+        # We will accept the feature matches if the max indexes here is
+        # not far away from the original key point location from descriptor
+        cross_check_correspondence_distances = torch.norm(
+            keypoint_2d_locations_1 - detected_source_keypoint_2d_locations, dim=1, p=2).view(
+            keypoint_number)
+        valid_correspondence_indexes = torch.nonzero(cross_check_correspondence_distances < cross_check_distance).view(
+            -1)
+
+        if valid_correspondence_indexes.shape[0] == 0:
+            return None
+
+        valid_detected_1d_locations_2 = torch.gather(detected_target_1d_locations.long().view(-1),
+                                                     0, valid_correspondence_indexes.long())
+
+        valid_detected_target_2d_locations = torch.cat(
+            [torch.fmod(valid_detected_1d_locations_2.float(), width).view(-1, 1),
+             torch.floor(valid_detected_1d_locations_2.float() / width).view(-1, 1)],
+            dim=1).view(-1, 2).float()
+        valid_source_keypoint_indexes = valid_correspondence_indexes.view(-1).data.cpu().numpy()
+        valid_detected_target_2d_locations = valid_detected_target_2d_locations.view(-1, 2).data.cpu().numpy()
+        return valid_source_keypoint_indexes, valid_detected_target_2d_locations
+
+
+def extract_keypoints(descriptor, colors_list, boundary, height, width):
+    keypoints_list = []
+    descriptions_list = []
+    keypoints_list_1D = []
+    keypoints_list_2D = []
+
+    boundary = np.uint8(255 * boundary.reshape((height, width)))
+    for i in range(len(colors_list)):
+        color_1 = colors_list[i]
+        color_1 = np.moveaxis(color_1, source=[0, 1, 2], destination=[2, 0, 1])
+        color_1 = cv2.cvtColor(np.uint8(255 * (color_1 * 0.5 + 0.5)), cv2.COLOR_RGB2BGR)
+        kps, des = descriptor.detectAndCompute(color_1, mask=boundary)
+        keypoints_list.append(kps)
+        descriptions_list.append(des)
+        temp = np.zeros((len(kps)))
+        temp_2d = np.zeros((len(kps), 2))
+
+        for j, point in enumerate(kps):
+            temp[j] = np.round(point.pt[0]) + np.round(point.pt[1]) * width
+            temp_2d[j, 0] = np.round(point.pt[0])
+            temp_2d[j, 1] = np.round(point.pt[1])
+
+        keypoints_list_1D.append(temp)
+        keypoints_list_2D.append(temp_2d)
+    return keypoints_list, keypoints_list_1D, keypoints_list_2D, descriptions_list
+
+
+def get_all_subfolder_names(root, id_range):
+    folder_list = []
+    for i in id_range:
+        folder_list += list(root.glob('{}/*/'.format(i)))
+    folder_list.sort()
+    return folder_list
+
+
+def get_all_color_image_names_in_sequence(sequence_root):
+    view_indexes = read_selected_indexes(sequence_root / "colmap" / "0")
+    filenames = []
+    for index in view_indexes:
+        filenames.append(sequence_root / "images" / "{:08d}.jpg".format(index))
+    return filenames
+
+
 def get_file_names_in_sequence(sequence_root):
-    path = sequence_root / 'visible_view_indexes'
+    path = sequence_root / "colmap" / "0" / 'visible_view_indexes'
     if not path.exists():
         return []
 
-    visible_view_indexes = read_visible_view_indexes(sequence_root)
+    visible_view_indexes = read_visible_view_indexes(sequence_root / "colmap" / "0")
     filenames = []
     for index in visible_view_indexes:
-        filenames.append(sequence_root / "{:08d}.jpg".format(index))
+        filenames.append(sequence_root / "images" / "{:08d}.jpg".format(index))
     return filenames
 
 
