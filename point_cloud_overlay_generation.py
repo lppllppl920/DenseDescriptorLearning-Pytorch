@@ -61,7 +61,7 @@ if __name__ == '__main__':
                 visible_view_indexes.append(int(line))
 
         # Read view indexes per point
-        view_indexes_per_point = np.zeros((plydata['vertex'].count, len(visible_view_indexes)))
+        view_indexes_per_point = np.zeros((plydata['vertex'].count, len(visible_view_indexes)), dtype=np.uint8)
         point_count = -1
         with open(str(prefix_seq / 'view_indexes_per_point')) as fp:
             for line in fp:
@@ -124,7 +124,7 @@ if __name__ == '__main__':
         # Drawing 2D overlay of sparse point cloud onto every image plane
         for i in range(len(visible_view_indexes)):
             print("Process {}...".format(i))
-            img = cv2.imread(str(prefix_seq.parents[1] / ("{:08d}.jpg".format(visible_view_indexes[i]))))
+            img = cv2.imread(str(prefix_seq / ("{:08d}.jpg".format(visible_view_indexes[i]))))
             img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
             height, width = img.shape[:2]
 

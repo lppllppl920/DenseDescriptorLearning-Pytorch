@@ -37,7 +37,7 @@ if __name__ == "__main__":
 
     for result_path in result_path_list:
         if not overwrite_output:
-            if len(list(result_path.glob("*"))) > 0:
+            if len(list(result_path.glob("*.txt"))) > 0 and (result_path / "selected_indexes").exists():
                 print("ERROR: output files already exist in {}".format(str(result_path)))
                 continue
 
@@ -60,7 +60,7 @@ if __name__ == "__main__":
 
         shutil.copy(src=str(mask_path), dst=str(result_path / mask_path.name))
 
-        f_selected_indexes = open(str(selected_indexes), "w")
+        f_selected_indexes = open(str(selected_indexes_path), "w")
         for index in selected_indexes:
             f_selected_indexes.write("{}\n".format(index))
         f_selected_indexes.close()
