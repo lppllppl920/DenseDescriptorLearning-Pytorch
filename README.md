@@ -28,7 +28,7 @@ Eprint = {arXiv:2003.00619},
 ## Instructions
 
 1. Install all necessary python packages: ```torch, torchvision, opencv-python, numpy, tqdm, pathlib, torchsummary, tensorboardX, albumentations, argparse, pickle, plyfile, pyyaml, datetime, random, shutil, matplotlib, tensorflow```.
-2. Generate training data from training videos using Structure from Motion (SfM). Please refer to one data example in [this storage](https://livejohnshopkins-my.sharepoint.com/:u:/g/personal/xliu89_jh_edu/EQBBHA7nrzpEhwnzu9PHVrkBAw7JTS8skhzMi-NS044mVg?e=fPj31p) for data formats. 
+2. Generate training data from training videos using Structure from Motion (SfM). Please refer to one data example in [this storage](https://livejohnshopkins-my.sharepoint.com/:u:/g/personal/xliu89_jh_edu/EQBBHA7nrzpEhwnzu9PHVrkBAw7JTS8skhzMi-NS044mVg?e=fPj31p) for data formats.
 Color images with the format of ```{:08d}.jpg``` are extracted from the video sequence where SfM is applied. ```camer_intrinsics_per_view``` stores the estimated camera intrinsic matrices for all registered views. 
 In this example, since all images are from the same video sequence, we assume the intrinsic matrices are the same for all images. The first four rows in this file are focal length along x and y direction, and principal point along x and y direction of the camera for the first frame. 
 ```motion.yaml``` stores the estimated poses of the camera coordinate system w.r.t. the world coordinate system . ```selected_indexes``` stores all frame indexes of the video sequence. 
@@ -42,7 +42,7 @@ One example for using ```colmap_model_converter.py``` is:
 ```
 /path/to/python /path/to/colmap_model_converter.py --colmap_exe_path /path/to/COLMAP.bat --sequence_root /path/to/video/sequence
 ```
-4. Run ```train.py``` with proper arguments for dense descriptor learning. One example is:
+4. Run ```train.py``` with proper arguments for dense descriptor learning. Note the images are assumed to have been undistorted. One usage example is:
 ```
 /path/to/python /path/to/train.py --adjacent_range 1 50 --image_downsampling 4.0 --network_downsampling 64 --input_size 256 320 --id_range 1 --batch_size 4 --num_workers 4 --num_pre_workers 4 --lr_range 1.0e-4 1.0e-3 --validation_interval 1 --display_interval 20 --rr_weight 1.0 --inlier_percentage 0.99 --training_patient_id 1 --testing_patient_id 1 --validation_patient_id 1 --num_epoch 100 --num_iter 3000 --display_architecture --load_intermediate_data --sampling_size 10 --log_root "/path/to/training/directory" --training_data_root "/path/to/training/data" --feature_length 256 --filter_growth_rate 10 --matching_scale 20.0 --matching_threshold 0.9 --cross_check_distance 5.0 --heatmap_sigma 5.0 --visibility_overlap 20 
 ```
