@@ -66,7 +66,7 @@ One example for using ```colmap_model_converter.py``` is:
 ```
 10. Run ```colmap_model_converter.py``` again as described in step 2 if you want to generate point cloud-video overlays like the GIFs above. Our method can be well integrated into COLMAP pipeline. One example of point cloud overlay with our descriptor and incremental bundle adjustment from COLMAP is as below. The number of points in this reconstruction is more than 210k.
 
-![Ours with COLMAP](point_cloud_overlay_fm_only_spatial_grouping.gif)
+![Ours with COLMAP](point_cloud_overlay_with_colmap.gif)
 
 11. Run ```point_cloud_overlay_generation.py``` to generate a point cloud-video overlay video. One example is:
 ```
