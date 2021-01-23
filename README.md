@@ -15,14 +15,15 @@ In ***2020 Conference on Computer Vision and Pattern Recognition (CVPR)***
 
 Please contact [**Xingtong Liu**](http://www.cs.jhu.edu/~xingtongl/) (xingtongliu@jhu.edu) or [**Mathias Unberath**](https://www.cs.jhu.edu/faculty/mathias-unberath/) (unberath@jhu.edu) if you have any questions.
 
-We kindly ask you to cite [this paper](https://arxiv.org/abs/2003.00619) if the code is used in your own work.
+We kindly ask you to cite [this paper](https://ieeexplore.ieee.org/document/9157241) if the code is used in your own work.
 ```
-@misc{liu2020extremely,
-Author = {Xingtong Liu and Yiping Zheng and Benjamin Killeen and Masaru Ishii and Gregory D. Hager and Russell H. Taylor and Mathias Unberath},
-Title = {Extremely Dense Point Correspondences using a Learned Feature Descriptor},
-Year = {2020},
-Eprint = {arXiv:2003.00619},
-}
+@INPROCEEDINGS{liu2020extremely,
+  author={X. {Liu} and Y. {Zheng} and B. {Killeen} and M. {Ishii} and G. D. {Hager} and R. H. {Taylor} and M. {Unberath}},
+  booktitle={2020 IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR)}, 
+  title={Extremely Dense Point Correspondences Using a Learned Feature Descriptor}, 
+  year={2020},
+  pages={4846-4855},
+  doi={10.1109/CVPR42600.2020.00490}}
 ```
 
 ## Instructions
