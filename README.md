@@ -37,7 +37,6 @@ In this example, since all images are from the same video sequence, we assume th
 ```view_indexes_per_point``` stores the indexes of the frames that each point in the sparse reconstruction gets triangulated with. 
 The views per point are separated by -1 and the order of the points is the same as that in ```structure.ply```. 
 ```visible_view_indexes``` stores the original frame indexes of the registered views where valid camera poses are successfully estimated by SfM.
-
 Note that we provide a python script, named ```colmap_model_converter.py```, to convert the [COLMAP](https://colmap.github.io/) format to the ones described above.
 All types of training data described above can be generated from COLMAP running results consisting of ```cameras.bin```, ```points3D.bin```, and ```images.bin```.
 One example for using ```colmap_model_converter.py``` is:
