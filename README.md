@@ -39,7 +39,7 @@ The views per point are separated by -1 and the order of the points is the same 
 ```visible_view_indexes``` stores the original frame indexes of the registered views where valid camera poses are successfully estimated by SfM.
 Note that we provide a python script, named ```colmap_model_converter.py```, to convert the [COLMAP](https://colmap.github.io/) format to the ones described above.
 All types of training data described above can be generated from COLMAP running results consisting of ```cameras.bin```, ```points3D.bin```, and ```images.bin```.
-One example for using ```colmap_model_converter.py``` is:
+One example of using ```colmap_model_converter.py``` is:
 ```
 /path/to/python /path/to/colmap_model_converter.py --colmap_exe_path /path/to/COLMAP.bat --sequence_root /path/to/video/sequence
 ```
