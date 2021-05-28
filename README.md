@@ -1,4 +1,4 @@
-# DenseDescriptorLearning-Pytorch
+# Extremely Dense Point Correspondences using a Learned Feature Descriptor
 
 ![Ours](point_cloud_overlay_fm_only_spatial_grouping.gif) ![SIFT](point_cloud_overlay_SIFT.gif)
 
