@@ -17,6 +17,7 @@ import numpy as np
 import cv2
 import h5py
 import tqdm
+import os
 from skimage.measure import ransac
 from skimage.transform import FundamentalMatrixTransform
 
@@ -211,148 +212,174 @@ class COLMAPDatabase(sqlite3.Connection):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Dense Descriptor Learning -- COLMAP database building',
                                      formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-    parser.add_argument("--sequence_root", type=str, required=True, help='root of video sequence')
+    parser.add_argument("--data_root", type=str, required=True, help='root of data')
+    parser.add_argument("--sequence_root", type=str, default=None, help='root of video sequence')
     parser.add_argument("--overwrite_database", action="store_true")
+    parser.add_argument("--camera_model", type=str, required=True, help='model of the camera to use')
 
     args = parser.parse_args()
-    sequence_root = Path(args.sequence_root)
     overwrite_database = args.overwrite_database
-    feature_match_path = sequence_root / "feature_matches.hdf5"
-    database_path = sequence_root / "database.db"
 
-    if not overwrite_database:
-        if database_path.exists():
-            print("ERROR: database exists already")
-            exit()
+    if args.sequence_root is not None:
+        sequence_root_list = [Path(args.sequence_root)]
+    else:
+        sequence_root_list = sorted(list(Path(args.data_root).rglob("_start*")))
 
-    if not feature_match_path.exists():
-        print("ERROR: feature matches hdf5 file does not exist")
-        exit()
+    for sequence_root in sequence_root_list:
+        print(f"Processing {str(sequence_root)}...")
+        feature_match_path = sequence_root / "feature_matches.hdf5"
+        database_path = sequence_root / f"database_{args.camera_model}.db"
 
-    # Open the database.
-    db = COLMAPDatabase.connect(str(database_path))
-
-    # For convenience, try creating all the tables upfront.
-    db.create_tables()
-
-    images_root = sequence_root / "images"
-    image_list = list(images_root.glob("0*.jpg"))
-    image_list.sort()
-
-    image = cv2.imread(str(image_list[0]))
-    height, width, _ = image.shape
-
-    # Create camera model -- PINHOLE CAMERA (fx fy cx cy))
-    camera_intrinsics_path = sequence_root / "camera_intrinsics_per_view"
-    with open(str(camera_intrinsics_path), "r") as f:
-        temp = list()
-        for i in range(4):
-            temp.append(f.readline())
-    model, intrinsics = 1, np.array((temp[0], temp[1], temp[2], temp[3]))
-    camera_id = db.add_camera(model, width, height, intrinsics)
-
-    # Create image ids
-    image_id_list = list()
-    for image_path in image_list:
-        image_id_list.append(db.add_image(image_path.name, camera_id))
-
-    # Create matches per image pair
-    f_matches = h5py.File(str(feature_match_path), 'r')
-    dataset_matches = f_matches['matches']
-    start_index = 0
-
-    tq = tqdm.tqdm(total=dataset_matches.shape[0])
-    tq.set_description("Gathering keypoints")
-    keypoints_dict = dict()
-    # Keypoint gathering
-    while start_index < dataset_matches.shape[0]:
-        header = dataset_matches[start_index, :, 0]
-        num_matches, id_1, id_2, _ = header
-        tq.set_postfix(source_frame_index='{:d}'.format(id_1),
-                       target_frame_index='{:d}'.format(id_2))
-        id_1 += 1
-        id_2 += 1
-        id_1 = int(id_1)
-        id_2 = int(id_2)
-        pair_matches = dataset_matches[start_index + 1:start_index + 1 + num_matches, :, 0]
-        pair_matches = pair_matches.astype(np.long)
-        matches = np.concatenate([(pair_matches[:, 0] + pair_matches[:, 1] * width).reshape((-1, 1)),
-                                  (pair_matches[:, 2] + pair_matches[:, 3] * width).reshape((-1, 1))], axis=1)
-
-        if str(id_1) not in keypoints_dict:
-            keypoints_dict[str(id_1)] = list(matches[:, 0])
-        else:
-            keypoints_dict[str(id_1)] += list(matches[:, 0])
-            keypoints_dict[str(id_1)] = list(np.unique(keypoints_dict[str(id_1)]))
-
-        if str(id_2) not in keypoints_dict:
-            keypoints_dict[str(id_2)] = list(matches[:, 1])
-        else:
-            keypoints_dict[str(id_2)] += list(matches[:, 1])
-            keypoints_dict[str(id_2)] = list(np.unique(keypoints_dict[str(id_2)]))
-        tq.update(num_matches + 1)
-        start_index += num_matches + 1
-
-    tq.close()
-    new_keypoints_dict = dict()
-    # Keypoint indexing building
-    # val -- 1D location of keypoint, key -- one-based frame index
-    for key, value in keypoints_dict.items():
-        value = np.unique(value)
-        temp = dict()
-        for idx, val in enumerate(value):
-            temp[str(val)] = int(idx + 1)
-        new_keypoints_dict[key] = temp
-
-    tq = tqdm.tqdm(total=dataset_matches.shape[0])
-    tq.set_description("Adding matches to database")
-    start_index = 0
-    while start_index < dataset_matches.shape[0]:
-        header = dataset_matches[start_index, :, 0]
-        num_matches, id_1, id_2, _ = header
-        id_1 += 1
-        id_2 += 1
-        id_1 = int(id_1)
-        id_2 = int(id_2)
-        # new_keypoint_dict -- one-based frame index
-        keypoint_dict_1 = new_keypoints_dict[str(id_1)]
-        keypoint_dict_2 = new_keypoints_dict[str(id_2)]
-
-        pair_matches = dataset_matches[start_index + 1:start_index + 1 + num_matches, :, 0]
-        model, inliers = ransac((pair_matches[:, :2],
-                                 pair_matches[:, 2:]),
-                                FundamentalMatrixTransform, min_samples=8,
-                                residual_threshold=10.0, max_trials=10)
-
-        pair_matches = pair_matches.astype(np.long)
-        pair_matches = np.concatenate([(pair_matches[:, 0] + pair_matches[:, 1] * width).reshape((-1, 1)),
-                                       (pair_matches[:, 2] + pair_matches[:, 3] * width).reshape((-1, 1))], axis=1)
-
-        idx_pair_matches = np.zeros_like(pair_matches).astype(np.int32)
-        # one-based keypoint index per frame
-        for i in range(pair_matches.shape[0]):
-            idx_pair_matches[i, 0] = int(keypoint_dict_1[str(pair_matches[i, 0])])
-            idx_pair_matches[i, 1] = int(keypoint_dict_2[str(pair_matches[i, 1])])
-        db.add_matches(id_1, id_2, idx_pair_matches)
-
-        # Fundamental matrix provided
-        db.add_two_view_geometry(id_1, id_2, idx_pair_matches[inliers], F=model.params, config=3)
-
-        tq.set_postfix(source_frame_index='{:d}'.format(id_1),
-                       target_frame_index='{:d}'.format(id_2),
-                       inliers_ratio='{:.3f}'.format(np.sum(inliers) / idx_pair_matches.shape[0]))
-        tq.update(num_matches + 1)
-        start_index += num_matches + 1
-
-    tq.close()
-    # Adding keypoints per image to database
-    for image_id in image_id_list:
-        if str(image_id) not in keypoints_dict:
+        if not overwrite_database and database_path.exists():
+            print(f"Database exists, skipping sequence {str(sequence_root)}")
             continue
-        temp = np.asarray(keypoints_dict[str(image_id)])
-        temp_1 = np.floor(temp.reshape((-1, 1)) / width)
-        temp_2 = np.mod(temp.reshape((-1, 1)), width)
-        db.add_keypoints(int(image_id), np.concatenate([temp_2, temp_1], axis=1).astype(np.int32))
+        elif overwrite_database and database_path.exists():
+            os.remove(str(database_path))
+            print("Database exists, deleted and recomputing...")
 
-    # Write to the database file
-    db.commit()
+        if not feature_match_path.exists():
+            print(f"Feature matches hdf5 file does not exist, skipping sequence {str(sequence_root)}")
+            continue
+
+        # Open the database.
+        db = COLMAPDatabase.connect(str(database_path))
+
+        # For convenience, try creating all the tables upfront.
+        db.create_tables()
+
+        images_root = sequence_root / "images"
+        image_list = sorted(list(images_root.glob('*.[pj][np][gg]')))
+
+        image = cv2.imread(str(image_list[0]))
+        height, width, _ = image.shape
+
+        # Create camera model -- PINHOLE CAMERA (fx fy cx cy))
+        camera_intrinsics_path = sequence_root / "camera_intrinsics"
+        with open(str(camera_intrinsics_path), "r") as f:
+            temp = list()
+            for i in range(4):
+                temp.append(f.readline())
+
+        # This is where we specify the camera model to use
+        if args.camera_model.lower() == "pinhole":
+            model, intrinsics = 1, np.array((float(temp[0]), float(temp[1]), float(temp[2]), float(temp[3])))
+            camera_id = db.add_camera(model, width, height, intrinsics)
+        elif args.camera_model.lower() == "radial":
+            # f, cx, cy, k1, k2
+            model, intrinsics = 3, np.array((0.5 * (float(temp[0]) + float(temp[1])), float(temp[2]),
+                                             float(temp[3]), 0.0, 0.0))
+            camera_id = db.add_camera(model, width, height, intrinsics)
+        elif args.camera_model.lower() == "opencv":
+            # fx, fy, cx, cy, k1, k2, p1, p2
+            model, intrinsics = 4, np.array((float(temp[0]), float(temp[1]), float(temp[2]),
+                                             float(temp[3]), 0.0, 0.0, 0.0, 0.0))
+            camera_id = db.add_camera(model, width, height, intrinsics)
+        else:
+            raise AttributeError(f"camera model {args.camera_model.lower()} is not yet supported in this script")
+
+        # Create image ids
+        image_id_list = list()
+        for image_path in image_list:
+            # This is where we tie certain images to a certain camera model created above
+            image_id_list.append(db.add_image(image_path.name, camera_id))
+
+        # Create matches per image pair
+        f_matches = h5py.File(str(feature_match_path), 'r')
+        dataset_matches = f_matches['matches']
+        start_index = 0
+
+        tq = tqdm.tqdm(total=dataset_matches.shape[0])
+        tq.set_description("Gathering keypoints")
+        keypoints_dict = dict()
+        # Keypoint gathering
+        while start_index < dataset_matches.shape[0]:
+            header = dataset_matches[start_index, :, 0]
+            num_matches, id_1, id_2, _ = header
+            tq.set_postfix(source_frame_index='{:d}'.format(id_1),
+                           target_frame_index='{:d}'.format(id_2))
+            id_1 += 1
+            id_2 += 1
+            id_1 = int(id_1)
+            id_2 = int(id_2)
+            pair_matches = dataset_matches[start_index + 1:start_index + 1 + num_matches, :, 0]
+            pair_matches = pair_matches.astype(np.long)
+            matches = np.concatenate([(pair_matches[:, 0] + pair_matches[:, 1] * width).reshape((-1, 1)),
+                                      (pair_matches[:, 2] + pair_matches[:, 3] * width).reshape((-1, 1))], axis=1)
+
+            if str(id_1) not in keypoints_dict:
+                keypoints_dict[str(id_1)] = list(matches[:, 0])
+            else:
+                keypoints_dict[str(id_1)] += list(matches[:, 0])
+                keypoints_dict[str(id_1)] = list(np.unique(keypoints_dict[str(id_1)]))
+
+            if str(id_2) not in keypoints_dict:
+                keypoints_dict[str(id_2)] = list(matches[:, 1])
+            else:
+                keypoints_dict[str(id_2)] += list(matches[:, 1])
+                keypoints_dict[str(id_2)] = list(np.unique(keypoints_dict[str(id_2)]))
+            tq.update(num_matches + 1)
+            start_index += num_matches + 1
+
+        tq.close()
+        new_keypoints_dict = dict()
+        # Keypoint indexing building
+        # val -- 1D location of keypoint, key -- one-based frame index
+        for key, value in keypoints_dict.items():
+            value = np.unique(value)
+            temp = dict()
+            for idx, val in enumerate(value):
+                temp[str(val)] = int(idx + 1)
+            new_keypoints_dict[key] = temp
+
+        tq = tqdm.tqdm(total=dataset_matches.shape[0])
+        tq.set_description("Adding matches to database")
+        start_index = 0
+        while start_index < dataset_matches.shape[0]:
+            header = dataset_matches[start_index, :, 0]
+            num_matches, id_1, id_2, _ = header
+            id_1 += 1
+            id_2 += 1
+            id_1 = int(id_1)
+            id_2 = int(id_2)
+            # new_keypoint_dict -- one-based frame index
+            keypoint_dict_1 = new_keypoints_dict[str(id_1)]
+            keypoint_dict_2 = new_keypoints_dict[str(id_2)]
+
+            pair_matches = dataset_matches[start_index + 1:start_index + 1 + num_matches, :, 0]
+            model, inliers = ransac((pair_matches[:, :2],
+                                     pair_matches[:, 2:]),
+                                    FundamentalMatrixTransform, min_samples=8,
+                                    residual_threshold=10.0, max_trials=10)
+
+            pair_matches = pair_matches.astype(np.long)
+            pair_matches = np.concatenate([(pair_matches[:, 0] + pair_matches[:, 1] * width).reshape((-1, 1)),
+                                           (pair_matches[:, 2] + pair_matches[:, 3] * width).reshape((-1, 1))], axis=1)
+
+            idx_pair_matches = np.zeros_like(pair_matches).astype(np.int32)
+            # one-based keypoint index per frame
+            for i in range(pair_matches.shape[0]):
+                idx_pair_matches[i, 0] = int(keypoint_dict_1[str(pair_matches[i, 0])])
+                idx_pair_matches[i, 1] = int(keypoint_dict_2[str(pair_matches[i, 1])])
+            db.add_matches(id_1, id_2, idx_pair_matches)
+
+            # Fundamental matrix provided
+            db.add_two_view_geometry(id_1, id_2, idx_pair_matches[inliers], F=model.params, config=3)
+
+            tq.set_postfix(source_frame_index='{:d}'.format(id_1),
+                           target_frame_index='{:d}'.format(id_2),
+                           inliers_ratio='{:.3f}'.format(np.sum(inliers) / idx_pair_matches.shape[0]))
+            tq.update(num_matches + 1)
+            start_index += num_matches + 1
+
+        tq.close()
+        # Adding keypoints per image to database
+        for image_id in image_id_list:
+            if str(image_id) not in keypoints_dict:
+                continue
+            temp = np.asarray(keypoints_dict[str(image_id)])
+            temp_1 = np.floor(temp.reshape((-1, 1)) / width)
+            temp_2 = np.mod(temp.reshape((-1, 1)), width)
+            db.add_keypoints(int(image_id), np.concatenate([temp_2, temp_1], axis=1).astype(np.int32))
+
+        # Write to the database file
+        db.commit()

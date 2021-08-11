@@ -20,7 +20,7 @@ import torch
 import utils
 
 
-def pre_processing_data(process_id, folder_list, downsampling, network_downsampling, inlier_percentage,
+def pre_processing_data(process_id, folder_list, phase, downsampling, network_downsampling, inlier_percentage,
                         visible_interval, suggested_h, suggested_w,
                         queue_clean_point_list, queue_intrinsic_matrix, queue_point_cloud,
                         queue_mask_boundary, queue_view_indexes_per_point, queue_selected_indexes,
@@ -28,19 +28,28 @@ def pre_processing_data(process_id, folder_list, downsampling, network_downsampl
                         queue_extrinsics, queue_projection, queue_crop_positions, queue_estimated_scale):
     for folder in folder_list:
         colmap_result_folder = folder / "colmap" / "0"
-        images_folder = folder / "images"
         # For now, we only use the results in the subfolder named "0" produced by COLMAP
         # We use folder path as the key for dictionaries
         # Read undistorted mask image
         folder_str = str(folder)
-        # Read visible view indexes
-        visible_view_indexes = utils.read_visible_view_indexes(colmap_result_folder)
-        if len(visible_view_indexes) == 0:
-            print("Sequence {} does not have relevant files".format(folder_str))
-            continue
-        queue_visible_view_indexes.put([folder_str, visible_view_indexes])
+        if phase != "image_loading" and (colmap_result_folder / "visible_view_indexes").exists():
+            # Read visible view indexes
+            visible_view_indexes = utils.read_visible_view_indexes(colmap_result_folder)
+            if len(visible_view_indexes) == 0:
+                print("Sequence {} does not have relevant files".format(folder_str))
+                continue
+            queue_visible_view_indexes.put([folder_str, visible_view_indexes])
+        else:
+            queue_visible_view_indexes.put([folder_str, None])
 
-        undistorted_mask_boundary = cv2.imread(str(colmap_result_folder / "undistorted_mask.bmp"), cv2.IMREAD_GRAYSCALE)
+        if phase != "image_loading" and (colmap_result_folder / "undistorted_mask.bmp").exists():
+            undistorted_mask_boundary = cv2.imread(str(colmap_result_folder / "undistorted_mask.bmp"),
+                                                   cv2.IMREAD_GRAYSCALE)
+        elif phase == "image_loading" and (folder / "mask.bmp").exists():
+            undistorted_mask_boundary = cv2.imread(str(folder / "mask.bmp"), cv2.IMREAD_GRAYSCALE)
+        else:
+            raise IOError("mask image does not exist")
+
         # Downsample and crop the undistorted mask image
         cropped_downsampled_undistorted_mask_boundary, start_h, end_h, start_w, end_w = \
             utils.downsample_and_crop_mask(undistorted_mask_boundary, downsampling_factor=downsampling,
@@ -48,66 +57,114 @@ def pre_processing_data(process_id, folder_list, downsampling, network_downsampl
                                            suggested_w=suggested_w)
         queue_mask_boundary.put([folder_str, cropped_downsampled_undistorted_mask_boundary])
         queue_crop_positions.put([folder_str, [start_h, end_h, start_w, end_w]])
-        # Read selected image indexes
-        selected_indexes = utils.read_selected_indexes(colmap_result_folder)
-        queue_selected_indexes.put([folder_str, selected_indexes])
-        # Read undistorted camera intrinsics
-        undistorted_camera_intrinsic_per_view = utils.read_camera_intrinsic_per_view(colmap_result_folder)
+
+        if phase != "image_loading" and (colmap_result_folder / "selected_indexes").exists():
+            # Read selected image indexes
+            selected_indexes = utils.read_selected_indexes(colmap_result_folder)
+            queue_selected_indexes.put([folder_str, selected_indexes])
+        else:
+            queue_selected_indexes.put([folder_str, None])
+
+        if phase != "image_loading" and (colmap_result_folder / "undistorted_camera_intrinsics").exists():
+            # Read undistorted camera intrinsics
+            undistorted_camera_intrinsic_per_view = \
+                utils.read_camera_intrinsic(colmap_result_folder / "undistorted_camera_intrinsics")
+        elif phase == "image_loading" and (folder / "camera_intrinsics").exists():
+            # Read undistorted camera intrinsics
+            undistorted_camera_intrinsic_per_view = \
+                utils.read_camera_intrinsic(folder / "camera_intrinsics")
+        else:
+            raise IOError("camera intrinsics does not exist")
         # Downsample and crop the undistorted camera intrinsics
         # Assuming that camera intrinsics within one video sequence remains the same
         cropped_downsampled_undistorted_intrinsic_matrix = utils.modify_camera_intrinsic_matrix(
             undistorted_camera_intrinsic_per_view[0], start_h=start_h,
             start_w=start_w, downsampling_factor=downsampling)
         queue_intrinsic_matrix.put([folder_str, cropped_downsampled_undistorted_intrinsic_matrix])
-        # Read sparse point cloud from SfM
-        point_cloud = utils.read_point_cloud(str(colmap_result_folder / "structure.ply"))
-        queue_point_cloud.put([folder_str, point_cloud])
-        # Read visible view indexes per point
-        view_indexes_per_point = utils.read_view_indexes_per_point(colmap_result_folder, visible_view_indexes=
-        visible_view_indexes, point_cloud_count=len(point_cloud))
-        # Update view_indexes_per_point with neighborhood frames to increase point correspondences and
-        # avoid as much occlusion problem as possible
-        view_indexes_per_point = utils.overlapping_visible_view_indexes_per_point(view_indexes_per_point,
-                                                                                  visible_interval)
-        queue_view_indexes_per_point.put([folder_str, view_indexes_per_point])
-        # Read pose data for all visible views
-        poses = utils.read_pose_data(colmap_result_folder)
-        # Calculate extrinsic and projection matrices
-        visible_extrinsic_matrices, visible_cropped_downsampled_undistorted_projection_matrices = \
-            utils.get_extrinsic_matrix_and_projection_matrix(poses,
-                                                             intrinsic_matrix=
-                                                             cropped_downsampled_undistorted_intrinsic_matrix,
-                                                             visible_view_count=len(visible_view_indexes))
-        queue_extrinsics.put([folder_str, visible_extrinsic_matrices])
-        queue_projection.put([folder_str, visible_cropped_downsampled_undistorted_projection_matrices])
-        # Get approximate data global scale to reduce training data imbalance
-        global_scale = utils.global_scale_estimation(visible_extrinsic_matrices, point_cloud)
-        queue_estimated_scale.put([folder_str, global_scale])
+
+        point_cloud = None
+        visible_cropped_downsampled_undistorted_projection_matrices = None
+        visible_extrinsic_matrices = None
+        view_indexes_per_point = None
+        visible_view_indexes = None
+
+        if phase != "image_loading" and (colmap_result_folder / "structure.ply").exists():
+            # Read sparse point cloud from SfM
+            point_cloud = utils.read_point_cloud(str(colmap_result_folder / "structure.ply"))
+            queue_point_cloud.put([folder_str, point_cloud])
+            # Read visible view indexes per point
+            view_indexes_per_point = utils.read_view_indexes_per_point(colmap_result_folder, visible_view_indexes=
+            visible_view_indexes, point_cloud_count=len(point_cloud))
+            # Update view_indexes_per_point with neighborhood frames to increase point correspondences and
+            # avoid as much occlusion problem as possible
+            view_indexes_per_point = utils.overlapping_visible_view_indexes_per_point(view_indexes_per_point,
+                                                                                      visible_interval)
+            queue_view_indexes_per_point.put([folder_str, view_indexes_per_point])
+        elif phase == "image_loading":
+            queue_view_indexes_per_point.put([folder_str, None])
+        else:
+            raise IOError("point cloud is not available")
+
+        if phase != "image_loading" and (colmap_result_folder / "motion.yaml").exists():
+            # Read pose data for all visible views
+            poses = utils.read_pose_data(colmap_result_folder)
+            # Calculate extrinsic and projection matrices
+            visible_extrinsic_matrices, visible_cropped_downsampled_undistorted_projection_matrices = \
+                utils.get_extrinsic_matrix_and_projection_matrix(poses,
+                                                                 intrinsic_matrix=
+                                                                 cropped_downsampled_undistorted_intrinsic_matrix,
+                                                                 visible_view_count=len(visible_view_indexes))
+            queue_extrinsics.put([folder_str, visible_extrinsic_matrices])
+            queue_projection.put([folder_str, visible_cropped_downsampled_undistorted_projection_matrices])
+            # Get approximate data global scale to reduce training data imbalance
+            global_scale = utils.global_scale_estimation(visible_extrinsic_matrices, point_cloud)
+            queue_estimated_scale.put([folder_str, global_scale])
+        elif phase == "image_loading":
+            queue_estimated_scale.put([folder_str, None])
+        else:
+            raise IOError("camera trajectory is not available")
+
+        if phase != "image_loading" and (folder / "undistorted").exists():
+            images_folder = (folder / "undistorted")
+        elif phase == "image_loading" and (folder / "images").exists():
+            images_folder = (folder / "images")
+        else:
+            raise IOError("No video frames are found")
+
         visible_cropped_downsampled_imgs = utils.get_color_imgs(images_folder,
                                                                 visible_view_indexes=visible_view_indexes,
                                                                 start_h=start_h, start_w=start_w,
                                                                 end_h=end_h, end_w=end_w,
                                                                 downsampling_factor=downsampling)
-        # Calculate contaminated point list
-        clean_point_indicator_array = utils.get_clean_point_list(imgs=visible_cropped_downsampled_imgs,
-                                                                 point_cloud=point_cloud,
-                                                                 mask_boundary=
-                                                                 cropped_downsampled_undistorted_mask_boundary,
-                                                                 inlier_percentage=inlier_percentage,
-                                                                 projection_matrices=
-                                                                 visible_cropped_downsampled_undistorted_projection_matrices,
-                                                                 extrinsic_matrices=visible_extrinsic_matrices,
-                                                                 view_indexes_per_point=view_indexes_per_point)
-        queue_clean_point_list.put([folder_str, clean_point_indicator_array])
+        if point_cloud is not None:
+            # Calculate contaminated point list
+            clean_point_indicator_array = utils.get_clean_point_list(imgs=visible_cropped_downsampled_imgs,
+                                                                     point_cloud=point_cloud,
+                                                                     mask_boundary=
+                                                                     cropped_downsampled_undistorted_mask_boundary,
+                                                                     inlier_percentage=inlier_percentage,
+                                                                     projection_matrices=
+                                                                     visible_cropped_downsampled_undistorted_projection_matrices,
+                                                                     extrinsic_matrices=visible_extrinsic_matrices,
+                                                                     view_indexes_per_point=view_indexes_per_point)
+            queue_clean_point_list.put([folder_str, clean_point_indicator_array])
+        else:
+            queue_clean_point_list.put([folder_str, None])
         print("sequence {} finished".format(folder_str))
 
     print("{}th process finished".format(process_id))
 
 
-def find_common_valid_size(folder_list, image_downsampling, network_downsampling, queue_size):
+def find_common_valid_size(folder_list, phase, image_downsampling, network_downsampling, queue_size):
     for folder in folder_list:
-        # Read mask image
-        undistorted_mask_boundary = cv2.imread(str(folder / "undistorted_mask.bmp"), cv2.IMREAD_GRAYSCALE)
+        if phase != "image_loading" and (folder / "colmap" / "0" / "undistorted_mask.bmp").exists():
+            undistorted_mask_boundary = cv2.imread(str(folder / "colmap" / "0" / "undistorted_mask.bmp"),
+                                                   cv2.IMREAD_GRAYSCALE)
+        elif phase == "image_loading" and (folder / "mask.bmp").exists():
+            undistorted_mask_boundary = cv2.imread(str(folder / "mask.bmp"), cv2.IMREAD_GRAYSCALE)
+        else:
+            raise IOError("mask image does not exist")
+
         # Downsample and crop the undistorted mask image
         _, start_h, end_h, start_w, end_w = \
             utils.downsample_and_crop_mask(undistorted_mask_boundary, downsampling_factor=image_downsampling,
@@ -176,6 +233,7 @@ class SfMDataset(Dataset):
                 process_pool.append(Process(target=find_common_valid_size, args=(
                     self.folder_list[
                     int(np.round(i * interval)): min(int(np.round((i + 1) * interval)), len(self.folder_list))],
+                    self.phase,
                     self.image_downsampling,
                     self.network_downsampling,
                     queue_size)))
@@ -215,6 +273,7 @@ class SfMDataset(Dataset):
                                             args=(i, self.folder_list[int(np.round(i * interval)):
                                                                       min(int(np.round((i + 1) * interval)),
                                                                           len(self.folder_list))],
+                                                  self.phase,
                                                   self.image_downsampling, self.network_downsampling,
                                                   self.inlier_percentage, self.visible_interval, largest_h, largest_w,
                                                   queue_clean_point_list,
@@ -341,9 +400,14 @@ class SfMDataset(Dataset):
                 # Retrieve the folder path
                 folder = img_file_name.parents[1]
                 images_folder = folder / "images"
-                folder_str = str(folder)
+                # folder_str = str(folder)
+                folder_str = None
+                for parent in img_file_name.parents:
+                    if "_start" in parent.name:
+                        folder_str = str(parent)
+                        break
                 # Randomly pick one adjacent frame
-                # We assume the filename has 8 logits followed by ".jpg"
+                # We assume the filename has 8 digits followed by ".jpg" or ".png"
                 if folder_str not in self.crop_positions_per_seq:
                     print("{} not in stored data".format(folder_str))
                     idx = np.random.randint(0, len(self.image_file_names))
@@ -456,8 +520,11 @@ class SfMDataset(Dataset):
             # images need to all belong to the same sequence and also all have the estimated camera poses
             # image file names should be already sorted
             img_file_name = self.image_file_names[idx]
-            folder = img_file_name.parents[1]
-            folder_str = str(folder)
+            folder_str = None
+            for parent in img_file_name.parents:
+                if "_start" in parent.name:
+                    folder_str = str(parent)
+                    break
             start_h, end_h, start_w, end_w = self.crop_positions_per_seq[folder_str]
 
             img_list = []
@@ -500,7 +567,11 @@ class SfMDataset(Dataset):
         elif self.phase == 'image_loading':
             img_file_name = self.image_file_names[idx]
             # Retrieve the folder path
-            folder_str = str(img_file_name.parents[1])
+            folder_str = None
+            for parent in img_file_name.parents:
+                if "_start" in parent.name:
+                    folder_str = str(parent)
+                    break
 
             start_h, end_h, start_w, end_w = self.crop_positions_per_seq[folder_str]
             color_img = utils.read_color_img(img_file_name, start_h, end_h, start_w, end_w,

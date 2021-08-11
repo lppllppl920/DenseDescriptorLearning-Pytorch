@@ -17,26 +17,39 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Dense Descriptor Learning -- sparse reconstruction using COLMAP',
                                      formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument("--colmap_exe_path", type=str, required=True)
-    parser.add_argument("--sequence_root", type=str, required=True, help='root of video sequence')
-    parser.add_argument("--overwrite_reconstruction", action="store_true")
+    parser.add_argument("--data_root", type=str, required=True, help='root of data')
+    parser.add_argument("--sequence_root", type=str, default=None, help='root of video sequence')
+    parser.add_argument("--output_mode", type=str, default=None, help='mode of output')
+    parser.add_argument("--camera_model", type=str, required=True, help='model of the camera to use')
     args = parser.parse_args()
 
     colmap_exe_path = args.colmap_exe_path
-    sequence_root = Path(args.sequence_root)
-    database_path = sequence_root / "database.db"
-    image_root = sequence_root / "images"
-    output_root = sequence_root / "colmap"
-    overwrite_reconstruction = args.overwrite_reconstruction
 
-    if not overwrite_reconstruction:
-        item = list(output_root.glob("*"))
-        if output_root.exists() and len(item) > 0:
-            print("ERROR: reconstruction exists already")
-            exit()
+    if args.sequence_root is not None:
+        sequence_root_list = [Path(args.sequence_root)]
+    else:
+        sequence_root_list = sorted(list(Path(args.data_root).rglob("_start*")))
 
-    if not output_root.exists():
-        output_root.mkdir(parents=True)
+    for sequence_root in sequence_root_list:
+        print(f"Processing {str(sequence_root)}...")
+        database_path = sequence_root / f"database_{args.camera_model}.db"
+        image_root = sequence_root / "images"
+        output_root = sequence_root / "colmap"
 
-    os.system(
-        "{} mapper --database_path \"{}\" --image_path \"{}\" --output_path \"{}\"".format(
-            colmap_exe_path, database_path, image_root, str(output_root)))
+        if not output_root.exists():
+            output_root.mkdir(parents=True)
+
+        if args.output_mode == "continue" and (output_root / "0").exists():
+            os.system(
+                "{} mapper --database_path \"{}\" --input_path \"{}\" --image_path \"{}\" --output_path \"{}\"".format(
+                    colmap_exe_path, str(database_path), str(output_root / "0"), str(image_root),
+                    str(output_root / "0")))
+        elif args.output_mode == "overwrite" or not (output_root / "0").exists():
+            # if not (output_root / "0").exists():
+            #     (output_root / "0").mkdir(parents=True)
+            os.system(
+                "{} mapper --database_path \"{}\" --image_path \"{}\" --output_path \"{}\"".format(
+                    colmap_exe_path, str(database_path), str(image_root), str(output_root)))
+        else:
+            print(f"output mode {args.output_mode} not supported or if statements above not satisfied")
+            continue

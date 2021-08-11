@@ -22,6 +22,8 @@ import torch
 import torchvision.utils as vutils
 import tqdm
 import matplotlib.pyplot as plt
+import h5py
+import os
 
 import dataset
 import models
@@ -48,6 +50,8 @@ def scatter_points_to_image(image, visible_locations_x, visible_locations_y, inv
     ax = plt.Axes(fig, [0., 0., 1., 1.])
     ax.set_axis_off()
     fig.add_axes(ax)
+    fig.subplots_adjust(0, 0, 1, 1)
+    plt.axis('off')
     plt.imshow(image, zorder=1)
     plt.scatter(x=visible_locations_x, y=visible_locations_y, s=point_size, alpha=0.5, c='b', zorder=2)
     if not only_visible:
@@ -73,11 +77,11 @@ def get_color_file_names_by_bag(root, training_patient_id, validation_patient_id
         testing_patient_id = [testing_patient_id]
 
     for id in training_patient_id:
-        training_image_list += list(root.glob('{:d}/*/images/0*.jpg'.format(id)))
+        training_image_list += list(root.glob('{:d}/*/images/0*.[pj][np][gg]'.format(id)))
     for id in testing_patient_id:
-        testing_image_list += list(root.glob('{:d}/*/images/0*.jpg'.format(id)))
+        testing_image_list += list(root.glob('{:d}/*/images/0*.[pj][np][gg]'.format(id)))
     for id in validation_patient_id:
-        validation_image_list += list(root.glob('{:d}/*/images/0*.jpg'.format(id)))
+        validation_image_list += list(root.glob('{:d}/*/images/0*.[pj][np][gg]'.format(id)))
 
     training_image_list.sort()
     testing_image_list.sort()
@@ -98,9 +102,9 @@ def downsample_and_crop_mask(mask, downsampling_factor, divide, suggested_h=None
     end_h_index = downsampled_mask.shape[0]
     end_w_index = downsampled_mask.shape[1]
     # divide is related to the pooling times of the teacher model
-    indexes = np.where(downsampled_mask >= 200)
-    h = indexes[0].max() - indexes[0].min()
-    w = indexes[1].max() - indexes[1].min()
+    indexes = np.where(downsampled_mask == 255)
+    h = indexes[0].max() - indexes[0].min() + 1
+    w = indexes[1].max() - indexes[1].min() + 1
 
     remainder_h = h % divide
     remainder_w = w % divide
@@ -111,29 +115,36 @@ def downsample_and_crop_mask(mask, downsampling_factor, divide, suggested_h=None
     target_h = h + increment_h
     target_w = w + increment_w
 
-    start_h = max(indexes[0].min() - increment_h // 2, 0)
+    start_h = indexes[0].min() - increment_h // 2
     end_h = start_h + target_h
 
-    start_w = max(indexes[1].min() - increment_w // 2, 0)
+    start_w = indexes[1].min() - increment_w // 2
     end_w = start_w + target_w
 
     if suggested_h is not None:
         if suggested_h != h:
             remain_h = suggested_h - target_h
-            start_h = max(start_h - remain_h // 2, 0)
-            end_h = min(suggested_h + start_h, end_h_index)
-            start_h = end_h - suggested_h
+            start_h = start_h - remain_h // 2
+            end_h = suggested_h + start_h
 
     if suggested_w is not None:
         if suggested_w != w:
             remain_w = suggested_w - target_w
-            start_w = max(start_w - remain_w // 2, 0)
-            end_w = min(suggested_w + start_w, end_w_index)
-            start_w = end_w - suggested_w
+            start_w = start_w - remain_w // 2
+            end_w = suggested_w + start_w
 
-    kernel = np.ones((5, 5), np.uint8)
-    downsampled_mask_erode = cv2.erode(downsampled_mask, kernel, iterations=1)
-    cropped_mask = downsampled_mask_erode[start_h:end_h, start_w:end_w]
+    # Doing padding first on the mask
+    downsampled_mask = np.pad(downsampled_mask,
+                              ((max(0, -start_h), max(0, end_h + 1 - downsampled_mask.shape[0])),
+                               (max(0, -start_w), max(0, end_w + 1 - downsampled_mask.shape[1]))),
+                              'constant', constant_values=0)
+
+    if -start_h < 3 or -start_w < 3:
+        kernel = np.ones((5, 5), np.uint8)
+        downsampled_mask = cv2.erode(downsampled_mask, kernel, iterations=1)
+
+    cropped_mask = downsampled_mask[max(0, -start_h) + start_h: max(0, -start_h) + end_h,
+                   max(0, -start_w) + start_w: max(0, -start_w) + end_w]
     return cropped_mask, start_h, end_h, start_w, end_w
 
 
@@ -157,11 +168,11 @@ def read_selected_indexes(prefix_seq):
     return selected_indexes
 
 
-def read_camera_intrinsic_per_view(prefix_seq):
+def read_camera_intrinsic(camera_intr_path):
     camera_intrinsics = []
     param_count = 0
     temp_camera_intrincis = np.zeros((3, 4))
-    with open(str(prefix_seq / 'camera_intrinsics_per_view')) as fp:
+    with open(str(camera_intr_path)) as fp:
         for line in fp:
             # Focal length
             if param_count == 0:
@@ -299,11 +310,43 @@ def global_scale_estimation(extrinsics, point_cloud):
 
 def get_color_imgs(prefix_seq, visible_view_indexes, start_h, end_h, start_w, end_w, downsampling_factor):
     imgs = []
-    for i in visible_view_indexes:
-        img = cv2.imread(str(prefix_seq / "{:08d}.jpg".format(i)))
-        downsampled_img = cv2.resize(img, (0, 0), fx=1. / downsampling_factor, fy=1. / downsampling_factor)
-        cropped_downsampled_img = downsampled_img[start_h:end_h, start_w:end_w, :]
-        imgs.append(cropped_downsampled_img)
+    if visible_view_indexes is not None:
+        for i in visible_view_indexes:
+            if (prefix_seq / "{:08d}.png".format(i)).exists():
+                img = cv2.imread(str(prefix_seq / "{:08d}.png".format(i)))
+            elif (prefix_seq / "{:08d}.jpg".format(i)).exists():
+                img = cv2.imread(str(prefix_seq / "{:08d}.jpg".format(i)))
+            else:
+                raise IOError("no images available")
+            downsampled_img = cv2.resize(img, (0, 0), fx=1. / downsampling_factor, fy=1. / downsampling_factor)
+            # Doing padding first on the mask
+            downsampled_img = np.pad(downsampled_img,
+                                     ((max(0, -start_h), max(0, end_h + 1 - downsampled_img.shape[0])),
+                                      (max(0, -start_w), max(0, end_w + 1 - downsampled_img.shape[1])),
+                                      (0, 0)),
+                                     'constant', constant_values=0)
+            cropped_downsampled_img = downsampled_img[max(0, -start_h) + start_h: max(0, -start_h) + end_h,
+                                      max(0, -start_w) + start_w: max(0, -start_w) + end_w, :]
+            # cv2.imshow("color", cropped_downsampled_img)
+            # cv2.waitKey()
+            imgs.append(cropped_downsampled_img)
+    else:
+        img_path_list = sorted(list(prefix_seq.glob("*.[pj][np][gg]")))
+        for img_path in img_path_list:
+            img = cv2.imread(str(img_path))
+            downsampled_img = cv2.resize(img, (0, 0), fx=1. / downsampling_factor, fy=1. / downsampling_factor)
+            # Doing padding first on the mask
+            downsampled_img = np.pad(downsampled_img,
+                                     ((max(0, -start_h), max(0, end_h + 1 - downsampled_img.shape[0])),
+                                      (max(0, -start_w), max(0, end_w + 1 - downsampled_img.shape[1])),
+                                      (0, 0)),
+                                     'constant', constant_values=0)
+            cropped_downsampled_img = downsampled_img[max(0, -start_h) + start_h: max(0, -start_h) + end_h,
+                                      max(0, -start_w) + start_w: max(0, -start_w) + end_w, :]
+            # cv2.imshow("color", cropped_downsampled_img)
+            # cv2.waitKey()
+            imgs.append(cropped_downsampled_img)
+
     height, width, channel = imgs[0].shape
     imgs = np.array(imgs, dtype="float32")
     imgs = np.reshape(imgs, (-1, height, width, channel))
@@ -438,7 +481,10 @@ def generating_pos_and_increment(idx, visible_view_indexes, adjacent_range):
 def get_pair_color_imgs(prefix_seq, pair_indexes, start_h, end_h, start_w, end_w, downsampling_factor):
     imgs = []
     for i in pair_indexes:
-        img = cv2.imread(str(prefix_seq / "{:08d}.jpg".format(i)))
+        if (prefix_seq / "{:08d}.png".format(i)).exists():
+            img = cv2.imread(str(prefix_seq / "{:08d}.png".format(i)))
+        elif (prefix_seq / "{:08d}.jpg".format(i)).exists():
+            img = cv2.imread(str(prefix_seq / "{:08d}.jpg".format(i)))
         downsampled_img = cv2.resize(img, (0, 0), fx=1. / downsampling_factor, fy=1. / downsampling_factor)
         downsampled_img = downsampled_img[start_h:end_h, start_w:end_w, :]
         downsampled_img = cv2.cvtColor(downsampled_img, cv2.COLOR_BGR2RGB)
@@ -962,27 +1008,9 @@ def feature_matching_single(color_1, color_2, feature_map_1, feature_map_2, kps_
         return display_matches_ai, display_matches_craft
 
 
-def gather_feature_matching_data(feature_descriptor_model_path, sub_folder, data_root, image_downsampling,
-                                 network_downsampling, load_intermediate_data, precompute_root,
-                                 batch_size, id_range, filter_growth_rate, feature_length, gpu_id):
-    feature_descriptor_model = models.FCDenseNet(
-        in_channels=3, down_blocks=(3, 3, 3, 3, 3),
-        up_blocks=(3, 3, 3, 3, 3), bottleneck_layers=4,
-        growth_rate=filter_growth_rate, out_chans_first_conv=16, feature_length=feature_length)
-
-    # Multi-GPU running
-    feature_descriptor_model = torch.nn.DataParallel(feature_descriptor_model, device_ids=[gpu_id])
-    feature_descriptor_model.eval()
-
-    if feature_descriptor_model_path.exists():
-        print("Loading {:s} ...".format(str(feature_descriptor_model_path)))
-        state = torch.load(str(feature_descriptor_model_path), map_location='cuda:{}'.format(gpu_id))
-        feature_descriptor_model.load_state_dict(state["model"])
-    else:
-        print("No pre-trained model detected")
-        raise OSError
-    del state
-
+def gather_color_data(sub_folder, data_root, image_downsampling,
+                      network_downsampling, load_intermediate_data, precompute_root,
+                      batch_size, id_range, gpu_id):
     video_frame_filenames = get_all_color_image_names_in_sequence(sub_folder)
     print("Gathering feature matching data for {}".format(str(sub_folder)))
     folder_list = get_all_subfolder_names(data_root, id_range)
@@ -998,7 +1026,6 @@ def gather_feature_matching_data(feature_descriptor_model_path, sub_folder, data
                                                num_workers=batch_size)
 
     colors_list = []
-    feature_maps_list = []
     with torch.no_grad():
         # Update progress bar
         tq = tqdm.tqdm(total=len(video_loader) * batch_size)
@@ -1011,13 +1038,83 @@ def gather_feature_matching_data(feature_descriptor_model_path, sub_folder, data
                 start_h = starts_h[0].item()
                 start_w = starts_w[0].item()
 
-            feature_maps_1 = feature_descriptor_model(colors_1)
             for idx in range(colors_1.shape[0]):
-                colors_list.append(colors_1[idx].data.cpu().numpy())
-                feature_maps_list.append(feature_maps_1[idx].data.cpu())
+                colors_list.append(colors_1[idx])
     tq.close()
-    del feature_descriptor_model
-    return colors_list, boundary, feature_maps_list, start_h, start_w
+    return colors_list, boundary, start_h, start_w
+
+
+# def gather_feature_matching_data(feature_descriptor_model_path, sub_folder, data_root, image_downsampling,
+#                                  network_downsampling, load_intermediate_data, precompute_root,
+#                                  batch_size, id_range, filter_growth_rate, feature_length, gpu_id):
+#     # if (sub_folder / "feature_maps.hdf5").exists():
+#     #     os.remove(str((sub_folder / "feature_maps.hdf5")))
+#     # f_matches = h5py.File(str(sub_folder / "feature_maps.hdf5"), 'w')
+#     # dataset_matches = None
+#
+#     feature_descriptor_model = models.FCDenseNet(
+#         in_channels=3, down_blocks=(3, 3, 3, 3, 3),
+#         up_blocks=(3, 3, 3, 3, 3), bottleneck_layers=4,
+#         growth_rate=filter_growth_rate, out_chans_first_conv=16, feature_length=feature_length)
+#
+#     # Multi-GPU running
+#     feature_descriptor_model = torch.nn.DataParallel(feature_descriptor_model, device_ids=[gpu_id])
+#     feature_descriptor_model.eval()
+#
+#     if feature_descriptor_model_path.exists():
+#         print("Loading {:s} ...".format(str(feature_descriptor_model_path)))
+#         state = torch.load(str(feature_descriptor_model_path), map_location='cuda:{}'.format(gpu_id))
+#         feature_descriptor_model.load_state_dict(state["model"])
+#     else:
+#         print("No pre-trained model detected")
+#         raise OSError
+#     del state
+#
+#     video_frame_filenames = get_all_color_image_names_in_sequence(sub_folder)
+#     print("Gathering feature matching data for {}".format(str(sub_folder)))
+#     folder_list = get_all_subfolder_names(data_root, id_range)
+#     video_dataset = dataset.SfMDataset(image_file_names=video_frame_filenames,
+#                                        folder_list=folder_list,
+#                                        image_downsampling=image_downsampling,
+#                                        network_downsampling=network_downsampling,
+#                                        load_intermediate_data=load_intermediate_data,
+#                                        intermediate_data_root=precompute_root,
+#                                        phase="image_loading")
+#     video_loader = torch.utils.data.DataLoader(dataset=video_dataset, batch_size=batch_size,
+#                                                shuffle=False,
+#                                                num_workers=batch_size)
+#
+#     colors_list = []
+#     feature_maps_list = []
+#     with torch.no_grad():
+#         # Update progress bar
+#         tq = tqdm.tqdm(total=len(video_loader) * batch_size)
+#         for batch, (colors_1, boundaries, image_names,
+#                     folders, starts_h, starts_w) in enumerate(video_loader):
+#             tq.update(batch_size)
+#             colors_1 = colors_1.cuda(gpu_id)
+#             if batch == 0:
+#                 boundary = boundaries[0].data.numpy()
+#                 start_h = starts_h[0].item()
+#                 start_w = starts_w[0].item()
+#
+#             feature_maps_1 = feature_descriptor_model(colors_1)
+#             # if dataset_matches is None:
+#             #     dataset_matches = f_matches.create_dataset('feature_maps', (0, *feature_maps_1.shape[1:4]),
+#             #                                                maxshape=(None, *feature_maps_1.shape[1:4]),
+#             #                                                chunks=(1, *feature_maps_1.shape[1:4]),
+#             #                                                compression="gzip", compression_opts=9, dtype='float32')
+#             # start_index = dataset_matches.shape[0]
+#             # dataset_matches.resize(
+#             #     (dataset_matches.shape[0] + colors_1.shape[0], *feature_maps_1.shape[1:4]))
+#             # dataset_matches[start_index:start_index + colors_1.shape[0], :, :, :] = feature_maps_1.cpu().numpy()
+#             for idx in range(colors_1.shape[0]):
+#                 colors_list.append(colors_1[idx].data.cpu().numpy())
+#                 feature_maps_list.append(feature_maps_1[idx].data.cpu())
+#     tq.close()
+#     # f_matches.close()
+#     del feature_descriptor_model
+#     return colors_list, feature_maps_list, boundary, start_h, start_w
 
 
 def feature_matching_single_generation(feature_map_1, feature_map_2,
@@ -1132,7 +1229,7 @@ def extract_keypoints(descriptor, colors_list, boundary, height, width):
 
     boundary = np.uint8(255 * boundary.reshape((height, width)))
     for i in range(len(colors_list)):
-        color_1 = colors_list[i]
+        color_1 = colors_list[i].cpu().numpy()
         color_1 = np.moveaxis(color_1, source=[0, 1, 2], destination=[2, 0, 1])
         color_1 = cv2.cvtColor(np.uint8(255 * (color_1 * 0.5 + 0.5)), cv2.COLOR_RGB2BGR)
         kps, des = descriptor.detectAndCompute(color_1, mask=boundary)
@@ -1160,10 +1257,17 @@ def get_all_subfolder_names(root, id_range):
 
 
 def get_all_color_image_names_in_sequence(sequence_root):
-    view_indexes = read_selected_indexes(sequence_root / "colmap" / "0")
-    filenames = []
-    for index in view_indexes:
-        filenames.append(sequence_root / "images" / "{:08d}.jpg".format(index))
+    # selected_indexes = []
+    # with open(str(sequence_root / "imatg" / "0" / 'selected_indexes')) as fp:
+    #     for line in fp:
+    #         selected_indexes.append(int(line))
+    # filenames = []
+    # for index in selected_indexes:
+    #     if (sequence_root / "images" / "{:08d}.png".format(index)).exists():
+    #         filenames.append(sequence_root / "images" / "{:08d}.png".format(index))
+    #     elif (sequence_root / "images" / "{:08d}.jpg".format(index)).exists():
+    #         filenames.append(sequence_root / "images" / "{:08d}.jpg".format(index))
+    filenames = sorted(list((sequence_root / "images").glob("*.[pj][np][gg]")))
     return filenames
 
 
@@ -1175,14 +1279,23 @@ def get_file_names_in_sequence(sequence_root):
     visible_view_indexes = read_visible_view_indexes(sequence_root / "colmap" / "0")
     filenames = []
     for index in visible_view_indexes:
-        filenames.append(sequence_root / "images" / "{:08d}.jpg".format(index))
+        if (sequence_root / "images" / "{:08d}.png".format(index)).exists():
+            filenames.append(sequence_root / "images" / "{:08d}.png".format(index))
+        elif (sequence_root / "images" / "{:08d}.jpg".format(index)).exists():
+            filenames.append(sequence_root / "images" / "{:08d}.jpg".format(index))
     return filenames
 
 
 def read_color_img(image_path, start_h, end_h, start_w, end_w, downsampling_factor):
     img = cv2.imread(str(image_path))
     downsampled_img = cv2.resize(img, (0, 0), fx=1. / downsampling_factor, fy=1. / downsampling_factor)
-    downsampled_img = downsampled_img[start_h:end_h, start_w:end_w, :]
+    downsampled_img = np.pad(downsampled_img,
+                             ((max(0, -start_h), max(0, end_h + 1 - downsampled_img.shape[0])),
+                              (max(0, -start_w), max(0, end_w + 1 - downsampled_img.shape[1])),
+                              (0, 0)),
+                             'constant', constant_values=0)
+    downsampled_img = downsampled_img[max(0, -start_h) + start_h: max(0, -start_h) + end_h,
+                      max(0, -start_w) + start_w: max(0, -start_w) + end_w, :]
     downsampled_img = cv2.cvtColor(downsampled_img, cv2.COLOR_BGR2RGB)
     downsampled_img = downsampled_img.astype(np.float32)
     return downsampled_img
