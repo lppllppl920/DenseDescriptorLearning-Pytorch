@@ -74,6 +74,10 @@ One example of using ```colmap_model_converter.py``` is:
 /path/to/python /path/to/point_cloud_overlay_generation.py --sequence_root /path/to/video/sequence --display_image --write_video
 ```
 
+## Pre-trained Models
+
+The pre-trained weights for dense descriptor network are provided [here](https://drive.google.com/file/d/1RwmxpI7kuZ7teB14EQY3u06CAV7-KsX0/view?usp=sharing). The zip file also includes monocular depth estimation models that are only relevant to some of the related projects below.
+
 ## Related Projects
 
 - [SAGE: SLAM with Appearance and Geometry Prior for Endoscopy (ICRA 2022)](https://github.com/lppllppl920/SAGE-SLAM)
