@@ -83,9 +83,3 @@ One example of using ```colmap_model_converter.py``` is:
 - [Reconstructing Sinus Anatomy from Endoscopic Video -- Towards a Radiation-free Approach for Quantitative Longitudinal Assessment (MICCAI 2020)](https://github.com/lppllppl920/DenseReconstruction-Pytorch)
 
 - [Dense Depth Estimation in Monocular Endoscopy with Self-supervised Learning Methods (TMI 2020)](https://github.com/lppllppl920/EndoscopyDepthEstimation-Pytorch)
-
-
-## Disclaimer
-
-This codebase is only experimental and not ready for clinical applications. Authors are not responsible for any accidents related to this repository.
-
